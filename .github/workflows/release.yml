@@ -1,76 +1,110 @@
 name: Release
 
-# Publishes a container image for this fork. Pushing a `v*` tag builds the image
-# and pushes it to GHCR; the digest is printed in the job summary so deployments
-# can pin `<tag>@sha256:<digest>`.
+# Publishes the gnolang/tmkms container image on a version tag. Builds
+# linux/amd64 from Dockerfile.release and pushes
+# ghcr.io/gnolang/tmkms:<tag>. The resulting manifest digest is recorded as a
+# job output, in the GitHub release notes, and in the job summary so a
+# deployment can pin <tag>@sha256:<digest>.
 #
-# The workflow can also be run manually against any ref to produce a test image
-# tagged with the short commit SHA.
+# amd64 only: every tmkms host in the fleet is x86_64 (ansible/roles/tmkms,
+# docker/tmkms/README.md), and an arm64 leg would compile the Rust binary
+# under full QEMU emulation for nothing.
+
 on:
   push:
     tags:
       - 'v*'
-  workflow_dispatch: {}
+
+permissions: {}
 
 env:
-  # Signing backends compiled into the released binary
+  # Signing backends compiled into the released binary.
   FEATURES: softsign,yubihsm,ledger
 
 jobs:
-  image:
+  release:
+    name: Build and publish the release image
     runs-on: ubuntu-latest
+    # A native Rust release build with three signing backends.
+    timeout-minutes: 45
     permissions:
-      contents: read
+      contents: write
       packages: write
+    outputs:
+      image: ${{ steps.image.outputs.image }}
+      digest: ${{ steps.build.outputs.digest }}
     steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
-      - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
 
-      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+      - name: Log in to the GitHub Container Registry
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Determine image tag
-        id: meta
-        run: |
-          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
-            echo "tag=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
-          else
-            echo "tag=sha-$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Build and push
+      - name: Build and push the release image
         id: build
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: .
           file: Dockerfile.release
-          # The validator hosts are x86_64; building other architectures would
-          # only slow the release down
           platforms: linux/amd64
           build-args: FEATURES=${{ env.FEATURES }}
           push: true
-          tags: ghcr.io/${{ github.repository }}:${{ steps.meta.outputs.tag }}
           provenance: false
+          tags: ghcr.io/${{ github.repository }}:${{ github.ref_name }}
 
-      - name: Verify the image runs and report the pin
+      - name: Record the pinned image reference
+        id: image
+        env:
+          IMAGE: ghcr.io/${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+          DIGEST: ${{ steps.build.outputs.digest }}
         run: |
-          image="ghcr.io/${{ github.repository }}@${{ steps.build.outputs.digest }}"
-          version="$(docker run --rm "$image" version)"
-          echo "reported version: ${version}"
+          echo "image=${IMAGE}:${TAG}@${DIGEST}" >> "$GITHUB_OUTPUT"
 
+      # The digest is published only once the pushed image runs and reports the
+      # version the tag names, so a forgotten Cargo.toml bump fails here.
+      - name: Smoke-test the pushed image
+        env:
+          PINNED_IMAGE: ${{ steps.image.outputs.image }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          reported="$(docker run --rm "$PINNED_IMAGE" version)"
+          echo "reported version: ${reported}"
+          case "$reported" in
+            *"${TAG#v}"*) ;;
+            *) echo "::error::image reports '${reported}' but the tag is '${TAG}'"; exit 1 ;;
+          esac
+
+      - name: Publish the digest to the GitHub release notes
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+          PINNED_IMAGE: ${{ steps.image.outputs.image }}
+        run: |
+          notes="Image: \`${PINNED_IMAGE}\`"
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --notes "$notes"
+          else
+            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --title "$TAG" --notes "$notes"
+          fi
+
+      - name: Write the digest to the job summary
+        env:
+          PINNED_IMAGE: ${{ steps.image.outputs.image }}
+        run: |
           {
             echo "### tmkms image published"
             echo
             echo '```'
-            echo "ghcr.io/${{ github.repository }}:${{ steps.meta.outputs.tag }}@${{ steps.build.outputs.digest }}"
+            echo "${PINNED_IMAGE}"
             echo '```'
-            echo
-            echo "- features: \`${FEATURES}\`"
-            echo "- \`tmkms version\` reports: \`${version}\`"
           } >> "$GITHUB_STEP_SUMMARY"
