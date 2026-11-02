@@ -56,9 +56,10 @@ pub enum Format {
     /// valoper realm accepts. Only Ed25519 consensus keys have a gno encoding;
     /// account keys and other key types print as hex under this format.
     ///
-    /// The result is 99 characters, past BIP-173's 90-character limit, because
-    /// gno.land's encoding exceeds it: a tool that enforces the limit rejects
-    /// the string even though gno.land accepts it.
+    /// Wrapping the key in an amino `Any` makes the payload 55 bytes, which
+    /// Bech32 expands to 99 characters, past BIP-173's 90-character limit. A tool
+    /// that enforces the limit rejects the string even though gno.land accepts
+    /// it.
     #[serde(rename = "gno")]
     Gno,
 }
@@ -102,8 +103,13 @@ impl Format {
         }
     }
 
-    /// Warning to emit when this format prints something that resembles
+    /// Warning to emit when this format prints a consensus key that resembles
     /// gno.land's encoding without being decodable as it.
+    ///
+    /// Only the consensus prefix is checked. An account prefix of `gpub` also
+    /// prints a `gpub1…` string gno.land cannot decode, but `bech32` hashes an
+    /// account key to an `account::Id` first, so that string is a different
+    /// thing entirely rather than a near-miss of a validator key.
     pub fn misleading_gno_prefix_warning(&self) -> Option<&'static str> {
         match self {
             Format::Bech32 {
@@ -225,11 +231,10 @@ mod tests {
     /// Everything but an Ed25519 *consensus* key prints as hex, which pins both
     /// halves of the fallback arm: the key role and the key type.
     ///
-    /// `KeyRing::add_ed25519` serializes before rejecting an Ed25519 account key,
-    /// and `yubihsm keys list` builds an `AccountKey` for an EcK256 slot, so the
-    /// first two pairs reach a format; `ConsensusKey(secp256k1)` is rejected by
-    /// `KeyRing::add_ecdsa`, and is covered because `serialize` is public and the
-    /// `Ed25519` guard is what keeps it off the gno path.
+    /// All three reach a format: `yubihsm keys list` builds an `AccountKey` for an
+    /// EcK256 slot, and `KeyRing::add_ed25519` and `add_ecdsa` both serialize the
+    /// key into the message of the `unimplemented!` that rejects the pair they do
+    /// not support.
     #[test]
     fn gno_format_falls_back_to_hex_for_every_other_key() {
         let secp256k1 =
@@ -249,7 +254,7 @@ mod tests {
         ];
 
         for (key, expected) in cases {
-            assert_eq!(Format::Gno.serialize(key), expected);
+            assert_eq!(Format::Gno.serialize(key), expected, "key: {key:?}");
         }
     }
 
