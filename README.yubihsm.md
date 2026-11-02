@@ -529,7 +529,7 @@ Generated Secret Connection key: /home/user/.tmkms/secrets/kms-identity.key
 - `chain.id`, `validator.chain_id`, `providers.yubihsm.keys[].chain_ids` - set it as the chain name (for example, `cosmoshub-4` for Cosmos network)
 - `chain.key_format.account_key_prefix` - set it as a bech32 prefix for account public key (for example, `cosmospub` for Cosmos network)
 - `chain.key_format.consensus_key_prefix` - set it as a bech32 prefix for validator consensus public key (for example, `cosmosvalconspub` for Cosmos network)
-- for a gno.land chain, set `chain.key_format` to `{ type = "gno" }` instead of a bech32 prefix pair: `bech32` with gno.land's `gpub` prefix prints the legacy Tendermint amino layout, which gno.land cannot decode
+- `chain.key_format` - set it to `{ type = "gno" }` for a gno.land chain (a `bech32` prefix pair prints a layout gno.land cannot decode)
 - `providers.yubihsm.auth.key`, `providers.yubihsm.auth.password` - set it as YubiHSM credentials (if you haven't done it before, the default is 1/password)
 - `validator.addr` - remove the part before @ and the @ symbol itself to avoid mismatch
 - `validator.protocol_version` - set it to Tendermint version used (for example, `0.34` for Cosmos network), otherwise it won't be able to communicate with the node
