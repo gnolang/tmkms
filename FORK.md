@@ -142,10 +142,11 @@ and the valoper realm panics on that error, so operators had to copy the key out
 `gnoland`'s start-up log instead.
 
 `{ type = "gno" }` prints Bech32 `gpub` over the amino `Any` of the key — the string
-`gnoland` logs for its validator and the valoper realm accepts. A `bech32` `key_format` whose
-`consensus_key_prefix` is `gpub` warns once per chain, both at start-up and in
-`tmkms yubihsm keys list`, pointing at the new format. Account keys and non-Ed25519 keys fall back to hex: gno.land's validators
-sign with Ed25519 consensus keys, so no other key type has a gno encoding to print.
+`gnoland` logs for its validator and the valoper realm accepts. A `bech32`
+`key_format` whose `consensus_key_prefix` is `gpub` warns once per chain, both at
+start-up and in `tmkms yubihsm keys list`, pointing at the new format. Account keys
+and non-Ed25519 keys fall back to hex: gno.land's validators sign with Ed25519
+consensus keys, so no other key type has a gno encoding to print.
 
 Wrapping the key in an amino `Any` makes the payload 55 bytes, which Bech32 expands
 to 99 characters, past BIP-173's 90-character limit. A tool that enforces the limit
