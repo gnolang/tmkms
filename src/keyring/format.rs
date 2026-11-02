@@ -198,14 +198,19 @@ mod tests {
         );
 
         // Field 2: a `PubKeyEd25519` holding the key, so the key plus the two
-        // header bytes of its own field 1
-        assert_eq!(GNO_ED25519_ANY_PREFIX[19], 0x12);
+        // header bytes of its own field 1. Offsets follow the type URL, so a
+        // change to it is reported rather than silently shifting these reads.
+        let field2 = 2 + TYPE_URL.len();
+        assert_eq!(GNO_ED25519_ANY_PREFIX[field2], 0x12);
         assert_eq!(
-            usize::from(GNO_ED25519_ANY_PREFIX[20]),
+            usize::from(GNO_ED25519_ANY_PREFIX[field2 + 1]),
             ED25519_PUBKEY_LEN + 2
         );
-        assert_eq!(GNO_ED25519_ANY_PREFIX[21], 0x0a);
-        assert_eq!(usize::from(GNO_ED25519_ANY_PREFIX[22]), ED25519_PUBKEY_LEN);
+        assert_eq!(GNO_ED25519_ANY_PREFIX[field2 + 2], 0x0a);
+        assert_eq!(
+            usize::from(GNO_ED25519_ANY_PREFIX[field2 + 3]),
+            ED25519_PUBKEY_LEN
+        );
 
         assert_eq!(GNO_ED25519_ANY_PREFIX.len(), 2 + TYPE_URL.len() + 4);
     }
