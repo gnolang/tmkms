@@ -42,6 +42,7 @@ liveness/DoS > hygiene.
 | 14  | Zeroization gaps closed in key load, keygen and `yubihsm keys import`          | **Low**    | Hygiene             |
 | 15  | Dependencies refreshed, CI hardened, dev image off EOL centos:7                | **Low**    | Supply chain        |
 | 16  | `tmkms ledger init` can succeed at all, and honours the double-sign check      | **Low**    | Upstream bug (dead) |
+| 17  | A `gno` key format prints the public key gno.land accepts                      | **Low**    | Feature             |
 
 ## Behaviour changes (read before upgrading)
 
@@ -129,6 +130,23 @@ the signature through the double-sign check.
 
 The signing call itself still requires Ledger hardware and is therefore untested.
 
+### 17. A `gno` key format (Low)
+
+`key_format` only drives how tmkms displays a key, and none of its types printed
+the string gno.land uses. With `{ type = "bech32", consensus_key_prefix = "gpub" }`
+tmkms printed `gpub1zcjduepq…`, which looks like gno.land's key but is Bech32 over
+the legacy Tendermint amino layout: gno.land's `crypto.PubKeyFromBech32` rejects it,
+and the valoper realm panics on that error, so operators had to copy the key out of
+gnoland's start-up log instead.
+
+`{ type = "gno" }` prints Bech32 `gpub` over the amino `Any` of the key — the string
+gnoland logs for its validator and the valoper realm accepts. Configuring `bech32`
+with the `gpub` prefix now warns once per chain at start-up, pointing at the new
+format. Account keys and non-Ed25519 keys fall back to hex: gno.land's validators
+sign with Ed25519 consensus keys, so no other key type has a gno encoding to print.
+
+Signing is unaffected either way.
+
 ## Deliberately not changed
 
 - **The validator-facing `RemoteSignerError` is unchanged.** Internally a persistence
@@ -148,7 +166,7 @@ The signing call itself still requires Ledger hardware and is therefore untested
 ## Verification
 
 - `cargo fmt --all -- --check` and `cargo clippy --all-features` — clean.
-- `cargo test --all-features -- --test-threads 1` — 54 unit + 18 integration tests
+- `cargo test --all-features -- --test-threads 1` — 62 unit + 18 integration tests
   pass (10 ignored, all hardware-dependent).
 - The published image is pulled and checked on every release: it reports its own
   version, keeps `tmkms` as the entrypoint, and links the USB libraries the
