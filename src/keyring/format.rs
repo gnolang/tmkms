@@ -255,6 +255,24 @@ mod tests {
         );
     }
 
+    /// Only the consensus prefix decides: the account prefix names a different
+    /// encoding (`bech32` hashes account keys to an `account::Id`)
+    #[test]
+    fn only_the_consensus_prefix_triggers_the_warning() {
+        let account_only = Format::Bech32 {
+            account_key_prefix: "gpub".to_owned(),
+            consensus_key_prefix: "cosmosvalconspub".to_owned(),
+        };
+
+        assert!(account_only.misleading_gno_prefix_warning().is_none());
+        assert!(
+            gno_prefixed_bech32()
+                .misleading_gno_prefix_warning()
+                .unwrap()
+                .contains("gno.land cannot decode")
+        );
+    }
+
     #[test]
     fn other_formats_do_not_warn() {
         assert!(Format::Gno.misleading_gno_prefix_warning().is_none());
