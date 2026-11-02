@@ -8,7 +8,10 @@
 # Information about Tendermint blockchain networks this KMS services
 #
 # - id: The chain ID for this chain
-# - key_format: How this chain handles serialization. Type may be "bech32", "cosmos-json" or "hex"
+# - key_format: How this chain handles serialization. Type may be "bech32", "cosmos-json",
+#   "hex" or "gno". Note "bech32" with gno.land's "gpub" prefix is NOT gno.land's encoding:
+#   it prints the legacy Tendermint amino layout, which gno.land cannot decode. Use
+#   { type = "gno" } for a chain whose keys gno.land must accept.
 # - state_file (optional): path to where the state of the last signing operation is persisted.
 #   Written durably before each signature: the contents are fsynced and the parent directory is
 #   fsynced after the atomic rename. The directory must therefore be readable by the tmkms user
