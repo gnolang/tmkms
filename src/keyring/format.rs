@@ -217,22 +217,25 @@ mod tests {
         assert_eq!(serialized, EXAMPLE_GNO_KEY);
     }
 
+    /// `KeyRing::add_ed25519` serializes the key before rejecting an Ed25519
+    /// account key, so this pattern reaches a format even though no keyring
+    /// holds one
     #[test]
-    fn gno_format_falls_back_to_hex_for_account_keys() {
+    fn gno_format_falls_back_to_hex_for_ed25519_account_keys() {
         let serialized = Format::Gno.serialize(CometbftKey::AccountKey(example_key()));
 
         assert_eq!(serialized, EXAMPLE_KEY_HEX);
     }
 
-    /// `AccountKey(Ed25519)` is rejected before it reaches a format
-    /// (`KeyRing::add_ed25519`), so the reachable fallback is a consensus key
-    /// of another type
+    /// secp256k1 keys reach a format as *account* keys: `KeyRing::add_ecdsa`
+    /// rejects ECDSA consensus keys, and `yubihsm keys list` builds an
+    /// `AccountKey` for an EcK256 slot
     #[test]
-    fn gno_format_falls_back_to_hex_for_non_ed25519_consensus_keys() {
+    fn gno_format_falls_back_to_hex_for_secp256k1_account_keys() {
         let bytes = hex::decode_upper(EXAMPLE_SECP256K1_KEY_HEX).unwrap();
         let pk = PublicKey::from_raw_secp256k1(&bytes).unwrap();
 
-        let serialized = Format::Gno.serialize(CometbftKey::ConsensusKey(pk));
+        let serialized = Format::Gno.serialize(CometbftKey::AccountKey(pk));
 
         assert_eq!(serialized, EXAMPLE_SECP256K1_KEY_HEX);
     }
