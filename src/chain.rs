@@ -143,6 +143,10 @@ pub fn load_config(config: &KmsConfig) -> Result<(), Error> {
     check_state_files_are_unique(&config.chain)?;
 
     for config in &config.chain {
+        if let Some(warning) = config.key_format.misleading_gno_prefix_warning() {
+            warn!("[{}] {}", config.id, warning);
+        }
+
         REGISTRY.register(Chain::from_config(config)?)?;
     }
 
