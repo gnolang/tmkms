@@ -3,7 +3,7 @@
 This is a hardened fork of [iqlusioninc/tmkms](https://github.com/iqlusioninc/tmkms),
 branched from upstream `main` at [`de2b155`](https://github.com/iqlusioninc/tmkms/commit/de2b15536ed636a71f37303ef6189e889fe66dca)
 (version `0.15.0`), plus a round of security and correctness fixes driven by
-multi-agent security reviews of the whole tree.
+multi-agent security reviews of the whole tree, and gno.land-specific additions.
 
 It is published as a container image for gno.land validators:
 
@@ -13,7 +13,8 @@ ghcr.io/aeddi/tmkms:v0.16.0-gno.3
 
 The fork is missing no upstream commits. Fixes are being prepared as individual
 upstream PRs; every branch behind the changes below is preserved on this fork for
-that purpose.
+that purpose. Entries marked as a gno.land addition stay here, since upstream
+serves no gno.land chain.
 
 > **Upgrading from upstream 0.15.0 is not a no-op.** Several fixes are secure by
 > default and will refuse to start on a configuration upstream accepted. Read
@@ -42,7 +43,7 @@ liveness/DoS > hygiene.
 | 14  | Zeroization gaps closed in key load, keygen and `yubihsm keys import`          | **Low**    | Hygiene             |
 | 15  | Dependencies refreshed, CI hardened, dev image off EOL centos:7                | **Low**    | Supply chain        |
 | 16  | `tmkms ledger init` can succeed at all, and honours the double-sign check      | **Low**    | Upstream bug (dead) |
-| 17  | A `gno` key format prints the public key gno.land accepts                      | **Low**    | Feature             |
+| 17  | A `gno` key format prints the public key gno.land accepts                      | **Low**    | gno.land addition   |
 
 ## Behaviour changes (read before upgrading)
 
