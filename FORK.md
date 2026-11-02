@@ -139,10 +139,10 @@ the string gno.land uses. With `{ type = "bech32", consensus_key_prefix = "gpub"
 tmkms printed `gpub1zcjduepq…`, which looks like gno.land's key but is Bech32 over
 the legacy Tendermint amino layout: gno.land's `crypto.PubKeyFromBech32` rejects it,
 and the valoper realm panics on that error, so operators had to copy the key out of
-gnoland's start-up log instead.
+`gnoland`'s start-up log instead.
 
 `{ type = "gno" }` prints Bech32 `gpub` over the amino `Any` of the key — the string
-gnoland logs for its validator and the valoper realm accepts. A `bech32` `key_format` whose
+`gnoland` logs for its validator and the valoper realm accepts. A `bech32` `key_format` whose
 `consensus_key_prefix` is `gpub` warns once per chain, both at start-up and in
 `tmkms yubihsm keys list`, pointing at the new format. Account keys and non-Ed25519 keys fall back to hex: gno.land's validators
 sign with Ed25519 consensus keys, so no other key type has a gno encoding to print.
