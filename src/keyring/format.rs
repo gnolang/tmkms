@@ -57,8 +57,8 @@ pub enum Format {
     /// account keys and other key types print as hex under this format.
     ///
     /// The result is 99 characters, past BIP-173's 90-character limit, because
-    /// gno.land's encoding is: tools that enforce that limit reject the string
-    /// even though gno.land accepts it.
+    /// gno.land's encoding exceeds it: a tool that enforces the limit rejects
+    /// the string even though gno.land accepts it.
     #[serde(rename = "gno")]
     Gno,
 }
