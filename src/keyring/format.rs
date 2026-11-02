@@ -222,27 +222,35 @@ mod tests {
         assert_eq!(serialized, EXAMPLE_GNO_KEY);
     }
 
-    /// `KeyRing::add_ed25519` serializes the key before rejecting an Ed25519
-    /// account key, so this pattern reaches a format even though no keyring
-    /// holds one
+    /// Everything but an Ed25519 *consensus* key prints as hex, which pins both
+    /// halves of the fallback arm: the key role and the key type.
+    ///
+    /// `KeyRing::add_ed25519` serializes before rejecting an Ed25519 account key,
+    /// and `yubihsm keys list` builds an `AccountKey` for an EcK256 slot, so the
+    /// first two pairs reach a format; `ConsensusKey(secp256k1)` is rejected by
+    /// `KeyRing::add_ecdsa`, and is covered because `serialize` is public and the
+    /// `Ed25519` guard is what keeps it off the gno path.
     #[test]
-    fn gno_format_falls_back_to_hex_for_ed25519_account_keys() {
-        let serialized = Format::Gno.serialize(CometbftKey::AccountKey(example_key()));
+    fn gno_format_falls_back_to_hex_for_every_other_key() {
+        let secp256k1 =
+            PublicKey::from_raw_secp256k1(&hex::decode_upper(EXAMPLE_SECP256K1_KEY_HEX).unwrap())
+                .unwrap();
 
-        assert_eq!(serialized, EXAMPLE_KEY_HEX);
-    }
+        let cases = [
+            (CometbftKey::AccountKey(example_key()), EXAMPLE_KEY_HEX),
+            (
+                CometbftKey::AccountKey(secp256k1),
+                EXAMPLE_SECP256K1_KEY_HEX,
+            ),
+            (
+                CometbftKey::ConsensusKey(secp256k1),
+                EXAMPLE_SECP256K1_KEY_HEX,
+            ),
+        ];
 
-    /// secp256k1 keys reach a format as *account* keys: `KeyRing::add_ecdsa`
-    /// rejects ECDSA consensus keys, and `yubihsm keys list` builds an
-    /// `AccountKey` for an EcK256 slot
-    #[test]
-    fn gno_format_falls_back_to_hex_for_secp256k1_account_keys() {
-        let bytes = hex::decode_upper(EXAMPLE_SECP256K1_KEY_HEX).unwrap();
-        let pk = PublicKey::from_raw_secp256k1(&bytes).unwrap();
-
-        let serialized = Format::Gno.serialize(CometbftKey::AccountKey(pk));
-
-        assert_eq!(serialized, EXAMPLE_SECP256K1_KEY_HEX);
+        for (key, expected) in cases {
+            assert_eq!(Format::Gno.serialize(key), expected);
+        }
     }
 
     #[test]
