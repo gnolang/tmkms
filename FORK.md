@@ -148,7 +148,8 @@ format. Account keys and non-Ed25519 keys fall back to hex: gno.land's validator
 sign with Ed25519 consensus keys, so no other key type has a gno encoding to print.
 
 The string is 99 characters, past BIP-173's 90-character limit, because gno.land's
-encoding is: a tool that enforces the limit rejects a key gno.land itself accepts.
+encoding exceeds it: a tool that enforces the limit rejects a key gno.land itself
+accepts.
 
 Signing is unaffected either way.
 
