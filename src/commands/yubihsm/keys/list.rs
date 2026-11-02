@@ -83,6 +83,10 @@ fn load_chain_formatters() -> Map<chain::Id, keyring::Format> {
     let mut map = Map::new();
 
     for chain in &cfg.chain {
+        if let Some(warning) = chain.key_format.misleading_gno_prefix_warning() {
+            status_warn!("[{}] {}", chain.id, warning);
+        }
+
         if map
             .insert(chain.id.clone(), chain.key_format.clone())
             .is_some()
