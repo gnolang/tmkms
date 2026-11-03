@@ -41,4 +41,32 @@ fn warns_on_a_gno_prefix() {
         stderr.contains("gno.land cannot decode"),
         "expected a gno prefix warning, got: {stderr}"
     );
+    assert!(
+        stderr.contains("key 0x0002"),
+        "the key must still be printed, got: {stderr}"
+    );
+}
+
+/// Any other prefix is a chain's own business, so the command stays quiet
+#[cfg(feature = "yubihsm-mock")]
+#[test]
+fn does_not_warn_on_another_prefix() {
+    let cmd_out = cli::run_successfully(&[
+        "yubihsm",
+        "keys",
+        "generate",
+        "3",
+        "-p",
+        "cosmosvalconspub",
+        "-c",
+        super::KMS_CONFIG_PATH,
+    ]);
+
+    let stderr = str::from_utf8(&cmd_out.stderr).unwrap();
+
+    assert!(
+        !stderr.contains("gno.land cannot decode"),
+        "a non-gno prefix must not warn, got: {stderr}"
+    );
+    assert!(stderr.contains("key 0x0003"), "got: {stderr}");
 }
