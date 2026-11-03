@@ -17,7 +17,7 @@ There are two ways to install `tmkms` with Fortanix DSM, you need to pass the `-
 following method.
 
 ```
-$ git clone https://github.com/iqlusioninc/tmkms.git && cd tmkms
+$ git clone https://github.com/gnolang/tmkms.git && cd tmkms
 [...]
 $ cargo build --release --features=fortanixdsm
 ```

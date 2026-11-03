@@ -1,14 +1,14 @@
 # Tendermint KMS 🔐
 
-[![Crate][crate-image]][crate-link]
 [![Build Status][build-image]][build-link]
 [![Apache 2.0 Licensed][license-image]][license-link]
 ![MSRV][rustc-image]
 
 > **This is a hardened fork of [iqlusioninc/tmkms].** It carries security and
 > correctness fixes on top of upstream `0.15.0`, some of which are secure by
-> default and reject configurations upstream accepted. See **[FORK.md](./FORK.md)**
-> for the full list and the behaviour changes to check before upgrading.
+> default and reject configurations upstream accepted, plus additions specific to
+> gno.land. See **[FORK.md](./FORK.md)** for the full list and the behaviour
+> changes to check before upgrading.
 
 Key Management System for [CometBFT] (formerly [Tendermint]) applications such
 as [Cosmos Validators].
@@ -121,7 +121,7 @@ following method.
 The following example adds `--features=yubihsm` to enable YubiHSM 2 support.
 
 ```
-$ git clone https://github.com/iqlusioninc/tmkms.git && cd tmkms
+$ git clone https://github.com/gnolang/tmkms.git && cd tmkms
 [...]
 $ cargo build --release --features=yubihsm
 ```
@@ -241,12 +241,10 @@ See the License for the specific language governing permissions and
 limitations under the License.
 
 [//]: # 'badges'
-[crate-image]: https://img.shields.io/crates/v/tmkms.svg
-[crate-link]: https://crates.io/crates/tmkms
-[build-image]: https://github.com/iqlusioninc/tmkms/actions/workflows/ci.yml/badge.svg
-[build-link]: https://github.com/iqlusioninc/tmkms/actions/workflows/ci.yml
+[build-image]: https://github.com/gnolang/tmkms/actions/workflows/ci.yml/badge.svg
+[build-link]: https://github.com/gnolang/tmkms/actions/workflows/ci.yml
 [license-image]: https://img.shields.io/badge/license-Apache2.0-blue.svg
-[license-link]: https://github.com/iqlusioninc/tmkms/blob/main/LICENSE
+[license-link]: https://github.com/gnolang/tmkms/blob/main/LICENSE
 [rustc-image]: https://img.shields.io/badge/rustc-1.85+-blue.svg
 [//]: # 'links'
 
@@ -254,9 +252,9 @@ limitations under the License.
 [CometBFT]: https://cometbft.com/
 [Tendermint]: https://tendermint.com/
 [Cosmos Validators]: https://hub.cosmos.network/main/validators/validator-faq
-[YubiHSM2]: https://github.com/iqlusioninc/tmkms/blob/main/README.yubihsm.md
+[YubiHSM2]: https://github.com/gnolang/tmkms/blob/main/README.yubihsm.md
 [Ledger]: https://www.ledger.com/
 [ed25519-dalek]: https://github.com/dalek-cryptography/ed25519-dalek
 [supported Rust platform]: https://forge.rust-lang.org/platform-support.html
 [libusb]: https://libusb.info/
-[Dockerfile]: https://github.com/iqlusioninc/tmkms/blob/main/Dockerfile
+[Dockerfile]: https://github.com/gnolang/tmkms/blob/main/Dockerfile
