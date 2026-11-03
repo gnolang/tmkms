@@ -397,7 +397,10 @@ the following sets of credentials:
 
 - `tmkms yubihsm keys generate 1` - generates asymmetric key 0x0001, which is by
   default an Ed25519 signing key.
-- `-p` (or `--prefix`): Bech32 prefix to serialize key with (automatically sets label). A `gpub` prefix prints a layout gno.land cannot decode, and says so.
+- `-p` (or `--prefix`): Bech32 prefix to serialize key with (automatically
+  sets label). A `gpub` prefix prints a layout gno.land cannot decode;
+  `tmkms yubihsm keys list` prints the key gno.land accepts for a chain
+  whose `key_format` is `{ type = "gno" }`.
 - `-l` (or `--label`): an up-to-40-character label describing the key
 - `-b` (or `--backup`): path to a file where an *encrypted* backup of the
   generated key should be written
