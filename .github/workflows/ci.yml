@@ -105,7 +105,7 @@ jobs:
           toolchain: 1.89 # pinned to prevent breakages when clippy updates
       - run: sudo apt-get update && sudo apt-get install libudev-dev
       - run: rustup component add clippy
-      - run: cargo clippy --all-features
+      - run: cargo clippy --all-features --all-targets
 
   # Licenses, banned crates and dependency sources. Advisories are covered by the
   # separate security_audit workflow.
