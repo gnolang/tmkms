@@ -10,19 +10,23 @@ on:
   schedule:
     - cron: "0 0 * * *"
 
-# `contents: read` runs the audit; `checks: write` lets the action publish what
-# it finds as a check run, which is the path it takes for pull requests and for
-# pushes. The nightly schedule takes the other path and files an issue instead,
-# needing `issues: write` — not granted, and this repository has issues
-# disabled, so a scheduled run reports through its own log alone.
+# Read-only by default, so a job added later starts with no write of its own.
 permissions:
   contents: read
-  checks: write
 
 jobs:
   security_audit:
     name: Security Audit Workspace
     runs-on: ubuntu-latest
+    # A job block replaces the workflow default rather than extending it, so
+    # `contents: read` is repeated here. `checks: write` lets the action publish
+    # what it finds as a check run, the path it takes for pull requests and for
+    # pushes. The nightly schedule takes the other path and files an issue
+    # instead, needing `issues: write` — not granted, and this repository has
+    # issues disabled, so a scheduled run reports through its own log alone.
+    permissions:
+      contents: read
+      checks: write
     # Bounded for the same reason as the CI jobs, and more so: this one runs on
     # a nightly schedule, where a hung job is least likely to be noticed
     timeout-minutes: 15
