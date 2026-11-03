@@ -40,8 +40,8 @@ enum KmsSocket {
 }
 
 enum KmsConnection {
-    /// Secret connection type
-    Tcp(SecretConnection<TcpStream>),
+    /// Secret connection type, boxed: it is far larger than the UNIX variant
+    Tcp(Box<SecretConnection<TcpStream>>),
 
     /// UNIX connection type
     Unix(UnixConnection<UnixStream>),
@@ -205,7 +205,9 @@ impl KmsProcess {
                 // Here we reply to the kms with a "remote" ephemeral key, auth signature etc:
                 let socket_cp = sock.try_clone().unwrap();
 
-                KmsConnection::Tcp(SecretConnection::new(socket_cp, &identity_key).unwrap())
+                KmsConnection::Tcp(Box::new(
+                    SecretConnection::new(socket_cp, &identity_key).unwrap(),
+                ))
             }
 
             KmsSocket::Unix(ref sock) => {
