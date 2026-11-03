@@ -24,7 +24,6 @@ where
 
 /// Run the `tmkms` CLI command with the expectation that it will exit successfully,
 /// panicking with its stdout and stderr if it does not
-#[allow(dead_code)]
 pub fn run_successfully<I, S>(args: I) -> Output
 where
     I: IntoIterator<Item = S>,
@@ -45,6 +44,19 @@ where
             String::from_utf8_lossy(&output.stderr)
         );
     }
+}
+
+/// Nothing else exercises the failure branch: every other caller expects to
+/// succeed, so without this the reporting path is only ever read by someone who
+/// already has a failing test.
+///
+/// This covers the exit-status branch and the shape of the report. It cannot
+/// cover the signal branch, which needs a command that dies from a signal, so
+/// replacing `status.success()` with `status.code().unwrap()` still passes here.
+#[test]
+#[should_panic(expected = "--- stderr ---")]
+fn a_failed_command_is_reported_with_both_streams() {
+    run_successfully(["not-a-real-subcommand"]);
 }
 
 #[test]
