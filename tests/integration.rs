@@ -33,10 +33,10 @@ const SIGNING_SECP256K1_KEY_PATH: &str = "tests/support/signing_secp256k1.key";
 
 enum KmsSocket {
     /// TCP socket type
-    TCP(TcpStream),
+    Tcp(TcpStream),
 
     /// UNIX socket type
-    UNIX(UnixStream),
+    Unix(UnixStream),
 }
 
 enum KmsConnection {
@@ -97,7 +97,7 @@ impl KmsProcess {
         let (socket, _) = listener.accept().unwrap();
         Self {
             process,
-            socket: KmsSocket::TCP(socket),
+            socket: KmsSocket::Tcp(socket),
             _state_dir: state_dir,
         }
     }
@@ -122,7 +122,7 @@ impl KmsProcess {
         let (socket, _) = listener.accept().unwrap();
         Self {
             process,
-            socket: KmsSocket::UNIX(socket),
+            socket: KmsSocket::Unix(socket),
             _state_dir: state_dir,
         }
     }
@@ -198,7 +198,7 @@ impl KmsProcess {
     /// Get a connection from the socket
     pub fn create_connection(&self) -> KmsConnection {
         match self.socket {
-            KmsSocket::TCP(ref sock) => {
+            KmsSocket::Tcp(ref sock) => {
                 // we use the same key for both sides:
                 let identity_key = IdentitySecret::from(test_ed25519_identity_keypair());
 
@@ -208,7 +208,7 @@ impl KmsProcess {
                 KmsConnection::Tcp(SecretConnection::new(socket_cp, &identity_key).unwrap())
             }
 
-            KmsSocket::UNIX(ref sock) => {
+            KmsSocket::Unix(ref sock) => {
                 let socket_cp = sock.try_clone().unwrap();
 
                 KmsConnection::Unix(UnixConnection::new(socket_cp))
