@@ -25,7 +25,7 @@ fn keys_command_test() {
 #[cfg(feature = "yubihsm-mock")]
 #[test]
 fn warns_on_a_gno_prefix() {
-    let out = cli::run_successfully(&[
+    let out = cli::run_successfully([
         "yubihsm",
         "keys",
         "list",
