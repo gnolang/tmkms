@@ -5,11 +5,14 @@ branched from upstream `main` at [`de2b155`](https://github.com/iqlusioninc/tmkm
 (version `0.15.0`), plus a round of security and correctness fixes driven by
 multi-agent security reviews of the whole tree, and gno.land-specific additions.
 
-It is published as a container image for gno.land validators:
+It is published as a container image for gno.land validators. The most recent release:
 
 ```
 ghcr.io/gnolang/tmkms:v0.16.0-gno.4
 ```
+
+Changes merged after that release reach the image under the next version tag, so an
+entry below can describe behaviour the image named here does not have yet.
 
 The fork is missing no upstream commits. Fixes are being prepared as individual
 upstream PRs; every branch behind the changes below is preserved on this fork for
