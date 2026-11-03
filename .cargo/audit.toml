@@ -12,4 +12,19 @@ ignore = [
     # parse timestamps with fixed, well-known formats rather than untrusted format strings.
     # Revisit when the MSRV moves to 1.88 or later.
     "RUSTSEC-2026-0009",
+    # h2 0.3.27 (unbounded queue of empty DATA frames). Reached only through sdkms ->
+    # simple-hyper-client -> hyper 0.14 under the `fortanixdsm` feature, which the release
+    # image does not build. The fix is in h2 0.4, which needs hyper 1, and sdkms 0.5.1, its
+    # newest release, still uses hyper 0.14, so no update can clear it. The only peer able to
+    # send such frames is the Fortanix DSM endpoint the operator configures. Revisit when
+    # sdkms moves off hyper 0.14.
+    "RUSTSEC-2026-0258",
+    # crypto-bigint 0.5.5 (operations meant to be constant-time can branch on secret data).
+    # Reached through elliptic-curve 0.13, which k256, p256 and p384 build on. The fix is in
+    # 0.7.6, reachable only from elliptic-curve 0.14 and k256 0.14, but iq-cometbft 0.1.0 and
+    # yubihsm 0.42.1, both their newest releases, pin k256 0.13, so no update can clear it. A
+    # secret scalar reaches it in-process only when softsign signs with a secp256k1 account
+    # key: Ed25519 consensus keys go through curve25519-dalek, and YubiHSM and Ledger keys
+    # never leave the device. Revisit when iq-cometbft and yubihsm move to k256 0.14.
+    "RUSTSEC-2026-0387",
 ]
