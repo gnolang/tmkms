@@ -178,7 +178,8 @@ Signing is unaffected either way.
 
 ## Verification
 
-- `cargo fmt --all -- --check` and `cargo clippy --all-features` — clean.
+- `cargo fmt --all -- --check` — clean.
+- `cargo clippy --all-features --all-targets` — clean.
 - `cargo test --all-features -- --test-threads 1` — 64 unit + 23 integration tests
   pass (10 ignored, all hardware-dependent).
 - The published image is pulled and checked on every release: it reports its own
