@@ -208,7 +208,7 @@ cargo fmt
 Lint your code (i.e. check it for common issues) with:
 
 ```
-cargo clippy
+cargo clippy --all-features --all-targets
 ```
 
 ## License
