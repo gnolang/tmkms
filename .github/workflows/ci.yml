@@ -5,6 +5,10 @@ on:
   push:
     branches: main
 
+# Read-only is all any job here needs: nothing publishes, comments or writes.
+permissions:
+  contents: read
+
 env:
   CARGO_INCREMENTAL: 0
   RUSTFLAGS: '-Dwarnings'
