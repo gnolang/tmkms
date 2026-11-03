@@ -50,9 +50,11 @@ where
 /// succeed, so without this the reporting path is only ever read by someone who
 /// already has a failing test.
 ///
-/// This covers the exit-status branch and the shape of the report. It cannot
-/// cover the signal branch, which needs a command that dies from a signal, so
-/// replacing `status.success()` with `status.code().unwrap()` still passes here.
+/// What it pins: the exit-status branch, and the stderr half of the report —
+/// the half that carries `tmkms`'s diagnostics. What it does not: the signal
+/// branch, which needs a command that dies from a signal, so replacing
+/// `status.success()` with `status.code().unwrap()` still passes here; and the
+/// stdout half, which can be dropped without failing it.
 #[test]
 #[should_panic(expected = "--- stderr ---")]
 fn a_failed_command_is_reported_with_both_streams() {
