@@ -19,6 +19,10 @@ use wait_timeout::ChildExt;
 /// Default timeout to use when a user one is unspecified
 const DEFAULT_TIMEOUT_SECS: u64 = 1;
 
+/// Most output a hook may produce. Valid output is one short JSON object, so the
+/// limit exists only to stop a runaway hook from growing the signer's memory.
+const MAX_OUTPUT_BYTES: u64 = 1024 * 1024;
+
 /// Sanity limit on how far the block height from the hook can diverge from the
 /// last known state
 pub const BLOCK_HEIGHT_SANITY_LIMIT: u64 = 9000;
@@ -38,7 +42,7 @@ pub fn run(config: &HookConfig) -> Result<Output, Error> {
 
     // Drained while the hook runs rather than once it exits: a hook that writes
     // more than the pipe holds blocks on that write until something reads it
-    let mut stdout = match child.stdout.take() {
+    let stdout = match child.stdout.take() {
         Some(stdout) => stdout,
         None => fail!(HookError, "couldn't consume stdout from child"),
     };
@@ -47,7 +51,11 @@ pub fn run(config: &HookConfig) -> Result<Output, Error> {
         .name("state-hook-output".to_owned())
         .spawn(move || {
             let mut output = Vec::new();
-            let read = stdout.read_to_end(&mut output).map(|_| output);
+            // One byte past the limit, so that going over it can be told apart
+            let read = stdout
+                .take(MAX_OUTPUT_BYTES + 1)
+                .read_to_end(&mut output)
+                .map(|_| output);
             // Fails only once `run` has stopped waiting, so nobody is left to tell
             let _ = sender.send(read);
         })?;
@@ -55,33 +63,46 @@ pub fn run(config: &HookConfig) -> Result<Output, Error> {
     let timeout = Duration::from_secs(config.timeout_secs.unwrap_or(DEFAULT_TIMEOUT_SECS));
     let deadline = Instant::now() + timeout;
 
-    match child.wait_timeout(timeout)? {
-        Some(status) => {
-            if status.success() {
-                // Bounded by the hook's own deadline: a process the hook leaves
-                // behind can hold stdout open long after the hook has exited
-                let remaining = deadline.saturating_duration_since(Instant::now());
-                let output = match receiver.recv_timeout(remaining) {
-                    Ok(read) => read?,
-                    Err(RecvTimeoutError::Timeout) => {
-                        fail!(HookError, "hook output still open after {:?}", timeout)
-                    }
-                    Err(RecvTimeoutError::Disconnected) => {
-                        fail!(HookError, "couldn't read the hook's output")
-                    }
-                };
-                Ok(serde_json::from_slice(&output)?)
-            } else {
-                fail!(HookError, "subcommand returned status {:?}", status.code())
-            }
-        }
+    let status = match child.wait_timeout(timeout)? {
+        Some(status) => status,
         None => {
             // timeout
             child.kill()?;
             child.wait()?;
             fail!(HookError, "subcommand timed out after {:?}", timeout)
         }
+    };
+
+    // Bounded by the hook's own deadline: a process the hook leaves behind can
+    // hold stdout open long after the hook has exited
+    let remaining = deadline.saturating_duration_since(Instant::now());
+    let output = receiver.recv_timeout(remaining);
+
+    // Checked before the exit status: a hook cut off at the limit dies of
+    // SIGPIPE, and its status alone would not say why
+    if matches!(&output, Ok(Ok(output)) if output.len() as u64 > MAX_OUTPUT_BYTES) {
+        fail!(
+            HookError,
+            "hook wrote more than {} bytes of output",
+            MAX_OUTPUT_BYTES
+        )
     }
+
+    if !status.success() {
+        fail!(HookError, "subcommand returned status {:?}", status.code())
+    }
+
+    let output = match output {
+        Ok(read) => read?,
+        Err(RecvTimeoutError::Timeout) => {
+            fail!(HookError, "hook output still open after {:?}", timeout)
+        }
+        Err(RecvTimeoutError::Disconnected) => {
+            fail!(HookError, "couldn't read the hook's output")
+        }
+    };
+
+    Ok(serde_json::from_slice(&output)?)
 }
 
 /// JSON output from the hook command (parsed with serde)
@@ -118,14 +139,29 @@ mod tests {
     /// the run would be reported as a timeout instead of read
     #[test]
     fn a_hook_writing_more_than_a_pipe_holds_is_still_read() {
-        // A mebibyte of leading whitespace, past any platform's pipe buffer,
-        // then the JSON a hook is expected to print
+        // 256 KiB of leading whitespace, past any platform's pipe buffer and
+        // short of the output limit, then the JSON a hook is expected to print
         let output = super::run(&shell_hook(
-            "head -c 1048576 /dev/zero | tr '\\0' ' '; echo '{\"latest_block_height\":\"5\"}'",
+            "head -c 262144 /dev/zero | tr '\\0' ' '; echo '{\"latest_block_height\":\"5\"}'",
         ))
         .expect("a large but well-formed output should be read");
 
         assert_eq!(output.latest_block_height.value(), 5);
+    }
+
+    /// Output past the limit is refused rather than held, and reported as such:
+    /// a hook cut off at the limit dies of SIGPIPE, so the cause must not be
+    /// reported as a bare exit status
+    #[test]
+    fn output_past_the_limit_is_an_error() {
+        // Two mebibytes of leading whitespace before otherwise valid JSON
+        let err = super::run(&shell_hook(
+            "head -c 2097152 /dev/zero | tr '\\0' ' '; echo '{\"latest_block_height\":\"5\"}'",
+        ))
+        .expect_err("output past the limit should be refused");
+
+        assert_eq!(*err.kind(), ErrorKind::HookError);
+        assert!(err.to_string().contains("more than"), "{err}");
     }
 
     /// The timeout bounds the whole run, reading the output included: a process
