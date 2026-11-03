@@ -41,10 +41,12 @@ pub fn run(config: &HookConfig) -> Result<Output, Error> {
         Some(stdout) => stdout,
         None => fail!(HookError, "couldn't consume stdout from child"),
     };
-    let reader = thread::spawn(move || {
-        let mut output = Vec::new();
-        stdout.read_to_end(&mut output).map(|_| output)
-    });
+    let reader = thread::Builder::new()
+        .name("state-hook-output".to_owned())
+        .spawn(move || {
+            let mut output = Vec::new();
+            stdout.read_to_end(&mut output).map(|_| output)
+        })?;
 
     let timeout = Duration::from_secs(config.timeout_secs.unwrap_or(DEFAULT_TIMEOUT_SECS));
 
