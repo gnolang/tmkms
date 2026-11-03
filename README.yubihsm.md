@@ -62,28 +62,24 @@ Run the following subcommand of the resulting `tmkms` executable to ensure
 that YubiHSM 2 support was compiled-in successfully:
 
 ```
-$ tmkms yubihsm help                                                                           127 ↵
-tmkms 0.4.0
-Tony Arcieri <tony@iqlusion.io>, Ismail Khoffi <Ismail.Khoffi@gmail.com>
-Tendermint Key Management System
+$ tmkms yubihsm help
+subcommands for YubiHSM2
 
-USAGE:
-  tmkms <SUBCOMMAND>
+Usage: tmkms yubihsm <COMMAND>
 
-FLAGS:
-  -h, --help     Prints help information
-  -V, --version  Prints version information
-
-SUBCOMMANDS:
+Commands:
   detect  detect all YubiHSM2 devices connected via USB
-  help    show help for the 'yubihsm' subcommand
   keys    key management subcommands
   setup   initial device setup and configuration
   test    perform a signing test
+  help    Print this message or the help of the given subcommand(s)
+
+Options:
+  -h, --help  Print help
 ```
 
-If `detect`, `help`, `keys`, `setup` etc are listed under `SUBCOMMANDS` then
-the build was successfully configured with YubiHSM 2 support.
+If `detect`, `keys`, `setup` and `test` are listed under `Commands` then the
+build was successfully configured with YubiHSM 2 support.
 
 ## udev configuration
 
