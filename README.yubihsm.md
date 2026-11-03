@@ -478,7 +478,7 @@ Stored Wrap key 0x0001
 - `[hex string]`: raw AES-256-CCM wrap key to import
 
 [YubiHSM 2]: https://www.yubico.com/product/yubihsm-2/
-[toplevel README.md]: https://github.com/gnolang/tmkms/blob/main/README.md#installation
+[toplevel README.md]: ./README.md#installation
 [BIP39]: https://github.com/bitcoin/bips/blob/master/bip-0039.mediawiki
 [yubihsm-setup]: https://developers.yubico.com/YubiHSM2/Component_Reference/yubihsm-setup/
 [yubihsm-shell]: https://developers.yubico.com/YubiHSM2/Component_Reference/yubihsm-shell/
