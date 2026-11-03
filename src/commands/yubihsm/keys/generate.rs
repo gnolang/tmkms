@@ -1,7 +1,9 @@
 //! Generate a new key within the YubiHSM2
 
 use super::{DEFAULT_DOMAINS, DEFAULT_WRAP_KEY};
-use crate::{config::provider::KeyType, key_utils, prelude::*};
+use crate::{
+    config::provider::KeyType, key_utils, keyring::format::gno_prefix_warning, prelude::*,
+};
 use abscissa_core::Command;
 use chrono::{SecondsFormat, Utc};
 use clap::Parser;
@@ -144,6 +146,12 @@ impl Runnable for GenerateCommand {
                         .as_ref(),
                 )
                 .unwrap();
+
+                // This command has no chain, so no `key_format` can steer the
+                // display; a gno.land prefix still needs saying out loud
+                if let Some(warning) = self.bech32_prefix.as_deref().and_then(gno_prefix_warning) {
+                    status_warn!("{}", warning);
+                }
 
                 let public_key_string = match self.bech32_prefix {
                     Some(ref prefix) => public_key.to_bech32(prefix),

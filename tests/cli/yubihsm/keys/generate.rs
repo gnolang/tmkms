@@ -18,3 +18,27 @@ fn keys_generate_command_test() {
     assert!(stderr.contains("Generated"));
     assert!(stderr.contains("key 0x0001"));
 }
+
+/// `-p gpub` prints the legacy layout, which gno.land cannot decode, so the
+/// command says so even though it never reads a chain's `key_format`
+#[cfg(feature = "yubihsm-mock")]
+#[test]
+fn warns_on_a_gno_prefix() {
+    let cmd_out = cli::run_successfully(&[
+        "yubihsm",
+        "keys",
+        "generate",
+        "2",
+        "-p",
+        "gpub",
+        "-c",
+        super::KMS_CONFIG_PATH,
+    ]);
+
+    let stderr = str::from_utf8(&cmd_out.stderr).unwrap();
+
+    assert!(
+        stderr.contains("gno.land cannot decode"),
+        "expected a gno prefix warning, got: {stderr}"
+    );
+}
