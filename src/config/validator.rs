@@ -50,12 +50,15 @@ impl ValidatorConfig {
     /// double signing protection state forward and deny signing for the real
     /// validator, so skipping verification requires an explicit opt-in.
     pub fn validate_peer_verification(&self) -> Result<(), Error> {
+        if self.allow_unverified_peer {
+            return Ok(());
+        }
+
         if let net::Address::Tcp {
             peer_id: None,
             host,
             port,
         } = &self.addr
-            && !self.allow_unverified_peer
         {
             fail!(
                 ConfigError,
