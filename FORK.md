@@ -67,8 +67,8 @@ Each of these is deliberate. Everything not listed here behaves as upstream 0.15
 - **Config errors are fatal at startup** instead of being retried forever.
 - **`state_hook` requires an explicit `fail_closed`**, and now actually runs (see #5).
 - New warnings, not errors: key files readable by group or others, a freshly
-  created state file with no signing history, and gno.land's `gpub` Bech32 prefix
-  wherever it is applied — a `bech32` `key_format`'s consensus prefix, or
+  created state file with no signing history, and gno.land's `gpub` used as a
+  `bech32` `key_format`'s consensus prefix or as the prefix of
   `tmkms yubihsm keys generate -p` (see #17).
 
 ## Details
