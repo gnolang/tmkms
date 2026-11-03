@@ -9,6 +9,13 @@ on:
 permissions:
   contents: read
 
+# A new push to a branch makes the run already in flight for it obsolete, so
+# stop paying for it. Runs on `main` are left to finish: their result is the
+# record of whether that commit is good, and nothing supersedes it.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 env:
   CARGO_INCREMENTAL: 0
   RUSTFLAGS: '-Dwarnings'
