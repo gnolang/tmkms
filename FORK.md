@@ -179,7 +179,7 @@ Signing is unaffected either way.
 ## Verification
 
 - `cargo fmt --all -- --check` and `cargo clippy --all-features` — clean.
-- `cargo test --all-features -- --test-threads 1` — 64 unit + 22 integration tests
+- `cargo test --all-features -- --test-threads 1` — 64 unit + 23 integration tests
   pass (10 ignored, all hardware-dependent).
 - The published image is pulled and checked on every release: it reports its own
   version, keeps `tmkms` as the entrypoint, and links the USB libraries the
