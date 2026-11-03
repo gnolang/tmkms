@@ -8,7 +8,7 @@ oracles, IBC relayers, and other transaction signing applications
 version = "0.16.0-gno.4"
 authors = ["Tony Arcieri <tony@iqlusion.io>", "Ismail Khoffi <Ismail.Khoffi@gmail.com>"]
 license = "Apache-2.0"
-repository = "https://github.com/iqlusioninc/tmkms/"
+repository = "https://github.com/gnolang/tmkms/"
 readme = "README.md"
 categories = ["cryptography::cryptocurrencies"]
 keywords = ["cosmos", "ed25519", "kms", "key-management", "yubihsm"]
