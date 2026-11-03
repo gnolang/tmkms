@@ -14,6 +14,9 @@ jobs:
   security_audit:
     name: Security Audit Workspace
     runs-on: ubuntu-latest
+    # Bounded for the same reason as the CI jobs, and more so: this one runs on
+    # a nightly schedule, where a hung job is least likely to be noticed
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
