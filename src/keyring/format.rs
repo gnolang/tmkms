@@ -64,13 +64,22 @@ pub enum Format {
     Gno,
 }
 
-/// Warning to emit for a Bech32 prefix that resembles gno.land's encoding
-/// without being decodable as it, wherever that prefix is applied.
+/// Whether a Bech32 prefix is gno.land's, so the string it produces resembles a
+/// gno.land public key without being decodable as one.
+fn is_gno_prefix(prefix: &str) -> bool {
+    prefix == GNO_PUBKEY_PREFIX
+}
+
+/// Warning for a command that applies a Bech32 prefix of its own, with no chain
+/// whose `key_format` could choose the encoding.
+///
+/// The remedy differs from the one a chain gets: this command cannot print the
+/// gno.land encoding at all, so it points at the command that can.
 pub fn gno_prefix_warning(prefix: &str) -> Option<&'static str> {
-    (prefix == GNO_PUBKEY_PREFIX).then_some(
+    is_gno_prefix(prefix).then_some(
         "the `gpub` prefix prints Bech32 over the legacy Tendermint amino layout, \
-         which gno.land cannot decode; a chain with `key_format = { type = \"gno\" }` \
-         prints the key gno.land accepts",
+         which gno.land cannot decode; `tmkms yubihsm keys list` prints the key \
+         gno.land accepts for a chain whose `key_format` is `{ type = \"gno\" }`",
     )
 }
 
@@ -125,7 +134,11 @@ impl Format {
             Format::Bech32 {
                 consensus_key_prefix,
                 ..
-            } => gno_prefix_warning(consensus_key_prefix),
+            } if is_gno_prefix(consensus_key_prefix) => Some(
+                "`key_format` `bech32` with the `gpub` consensus prefix prints Bech32 over \
+                 the legacy Tendermint amino layout, which gno.land cannot decode; use \
+                 `key_format = { type = \"gno\" }` to print the key gno.land accepts",
+            ),
             _ => None,
         }
     }
@@ -301,7 +314,7 @@ mod tests {
     }
 
     #[test]
-    fn the_gno_prefix_warns_whatever_applies_it() {
+    fn a_command_applying_the_gno_prefix_warns() {
         let warning = gno_prefix_warning("gpub").expect("gpub should warn");
 
         assert!(warning.contains("gno.land cannot decode"));
