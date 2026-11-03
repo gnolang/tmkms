@@ -2,7 +2,6 @@
 
 use std::{
     ffi::OsStr,
-    io::{self, Write},
     process::{Command, Output},
 };
 
@@ -24,7 +23,7 @@ where
 }
 
 /// Run the `tmkms` CLI command with the expectation that it will exit successfully,
-/// panicking and printing stdout/stderr if it does not
+/// panicking with its stdout and stderr if it does not
 #[allow(dead_code)]
 pub fn run_successfully<I, S>(args: I) -> Output
 where
@@ -32,15 +31,19 @@ where
     S: AsRef<OsStr>,
 {
     let output = run(args);
-    let status_code = output.status.code().unwrap();
 
-    if status_code == 0 {
+    if output.status.success() {
         output
     } else {
-        io::stdout().write_all(&output.stdout).unwrap();
-        io::stderr().write_all(&output.stderr).unwrap();
-
-        panic!("{KMS_EXE_PATH} exited with error status: {status_code}");
+        // Carried in the panic rather than written to the real stdout: that way
+        // the test harness attributes it to the failing test, the two streams
+        // cannot interleave, and a command killed by a signal still reports
+        panic!(
+            "{KMS_EXE_PATH} {}\n--- stdout ---\n{}\n--- stderr ---\n{}",
+            output.status,
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
     }
 }
 
