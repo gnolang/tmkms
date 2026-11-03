@@ -23,6 +23,9 @@ jobs:
 
   build:
     strategy:
+      # Report every leg: a cancelled leg is indistinguishable from an untested
+      # one, which hides whether a failure is confined to a single toolchain
+      fail-fast: false
       matrix:
         toolchain:
           - stable
@@ -44,6 +47,7 @@ jobs:
 
   test:
     strategy:
+      fail-fast: false
       matrix:
         toolchain:
           - stable
