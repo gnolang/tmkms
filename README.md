@@ -110,8 +110,9 @@ You will need the following prerequisites:
 NOTE (x86_64 only): Configure `RUSTFLAGS` environment variable:
 `export RUSTFLAGS=-Ctarget-feature=+aes,+ssse3`
 
-There are two ways to install `tmkms`: either compiling the source code after
-cloning it from git, or using Rust's `cargo install` command.
+This fork is not published to crates.io, so `cargo install tmkms` fetches
+upstream rather than this code. Build it from source as below, or use the
+container image named in [FORK.md](./FORK.md).
 
 ### Compiling from source code (via git)
 
@@ -130,22 +131,6 @@ Alternatively, substitute `--features=ledger` to enable Ledger support.
 
 If successful, this will produce a `tmkms` executable located at
 `./target/release/tmkms`
-
-### Installing with the `cargo install` command
-
-With Rust (1.85+) installed, you can install tmkms with the following:
-
-```
-cargo install tmkms --features=yubihsm
-```
-
-Or to install a specific version (recommended):
-
-```
-cargo install tmkms --features=yubihsm --version=0.4.0
-```
-
-Alternatively, substitute `--features=ledger` to enable Ledger support.
 
 ## Configuration: `tmkms init`
 
