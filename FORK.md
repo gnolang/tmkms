@@ -172,6 +172,17 @@ Signing is unaffected either way.
   requires Rust 1.88, above this crate's 1.85 MSRV, so the resolver holds `time`
   back. It is not reachable here: the advisory needs untrusted format descriptions,
   while the transitive users parse fixed formats. Revisit when the MSRV moves.
+- **`RUSTSEC-2026-0387` (`crypto-bigint`) stays ignored**, and it ships in the release
+  image. Its installable fix needs Rust 1.87, above the 1.85 MSRV, and
+  `elliptic-curve` 0.14, which neither this crate nor `iq-cometbft` nor `yubihsm` has
+  moved to. A secp256k1 secret passes through it whenever softsign or
+  `yubihsm keys import` builds an account key in-process; Ed25519 consensus keys and
+  keys held in a YubiHSM or Ledger are unaffected. Revisit when the MSRV reaches 1.87
+  and those crates have moved.
+- **`RUSTSEC-2026-0258` (`h2`) stays ignored.** It is compiled only with the
+  `fortanixdsm` feature, which the release image does not build, and even there the
+  Fortanix DSM client speaks HTTP/1.1, so it never runs. The fix needs hyper 1, which
+  `sdkms` does not use.
 - **The container runs as root**, matching the previously published image, because
   key and state files arrive on a host-mounted volume whose ownership is managed
   outside the image.
