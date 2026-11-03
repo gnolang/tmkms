@@ -13,9 +13,11 @@ Please see the [toplevel README.md] for prerequisites for compiling `tmkms`
 from source code. You will need: Rust (stable, 1.40+), a C compiler,
 `pkg-config`, and `libusb` (1.0+) installed.
 
-There are two ways to install `tmkms` with YubiHSM 2 support, and in either
-case, you will need to pass the `--features=yubihsm` parameter to enable
-YubiHSM 2 support:
+Build `tmkms` from source, passing `--features=yubihsm` to enable YubiHSM 2
+support. Do not use `cargo install tmkms`: this fork is not published to
+crates.io, so that fetches upstream rather than this code, without the fixes
+[FORK.md](./FORK.md) describes. The container image it names is the
+alternative.
 
 ### Compiling from source code (via git)
 
@@ -30,13 +32,6 @@ $ cargo build --release --features=yubihsm
 
 If successful, this will produce a `tmkms` executable located at
 `./target/release/tmkms`
-
-### Installing with the `cargo install` command
-
-This fork is not published to crates.io, so `cargo install tmkms` fetches
-upstream rather than this code, without the fixes described in
-[FORK.md](./FORK.md). Build from source as above, or use the container image
-named in FORK.md.
 
 ### Verifying YubiHSM support was included in a build
 
@@ -105,7 +100,7 @@ allows administration of YubiHSMs via `yubihsm-shell` or via `tmkms yubihsm`
 while the KMS is running (i.e. communicating with the YubiHSM2 via USB).
 
 To enable support for this feature, enable it when you compile Tendermint KMS,
-either via:
+with:
 
 ```
 $ cargo build --release --features=yubihsm-server

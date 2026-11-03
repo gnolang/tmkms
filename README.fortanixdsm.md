@@ -9,7 +9,10 @@ This document describes how to configure Fortanix DSM for production use with Te
 Refer the main README.md for compiling `tmkms`
 from source code. You will need the prerequisities mentioned as indicated above.
 
-There are two ways to install `tmkms` with Fortanix DSM, you need to pass the `--features=fortanixdsm` parameter to cargo.
+Build `tmkms` from source, passing `--features=fortanixdsm` to cargo. Do not use
+`cargo install tmkms`: this fork is not published to crates.io, so that fetches
+upstream rather than this code, without the fixes [FORK.md](./FORK.md)
+describes. The container image it names is the alternative.
 
 ### Compiling from source code (via git)
 
@@ -24,13 +27,6 @@ $ cargo build --release --features=fortanixdsm
 
 If successful, this will produce a `tmkms` executable located at
 `./target/release/tmkms`
-
-### Installing with the `cargo install` command
-
-This fork is not published to crates.io, so `cargo install tmkms` fetches
-upstream rather than this code, without the fixes described in
-[FORK.md](./FORK.md). Build from source as above, or use the container image
-named in FORK.md.
 
 ## Production Fortanix DSM setup
 
