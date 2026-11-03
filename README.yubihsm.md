@@ -55,8 +55,9 @@ Options:
   -h, --help  Print help
 ```
 
-If `detect`, `keys`, `setup` and `test` are listed under `Commands` then the
-build was successfully configured with YubiHSM 2 support.
+If that list of `Commands` appears, the build has YubiHSM 2 support. A build
+without it has no `yubihsm` subcommand at all, and fails with
+`error: unrecognized subcommand 'yubihsm'`.
 
 ## udev configuration
 
