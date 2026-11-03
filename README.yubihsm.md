@@ -10,7 +10,7 @@ with Tendermint KMS.
 ## Compiling `tmkms` with YubiHSM support
 
 Please see the [toplevel README.md] for prerequisites for compiling `tmkms`
-from source code. You will need: Rust (stable, 1.40+), a C compiler,
+from source code. You will need: Rust (stable, 1.85+), a C compiler,
 `pkg-config`, and `libusb` (1.0+) installed.
 
 Build `tmkms` from source, passing `--features=yubihsm` to enable YubiHSM 2
