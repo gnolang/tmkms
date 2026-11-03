@@ -10,8 +10,9 @@ use serde::Deserialize;
 use std::{
     io::Read,
     process::{Command, Stdio},
+    sync::mpsc::{self, RecvTimeoutError},
     thread,
-    time::Duration,
+    time::{Duration, Instant},
 };
 use wait_timeout::ChildExt;
 
@@ -41,21 +42,33 @@ pub fn run(config: &HookConfig) -> Result<Output, Error> {
         Some(stdout) => stdout,
         None => fail!(HookError, "couldn't consume stdout from child"),
     };
-    let reader = thread::Builder::new()
+    let (sender, receiver) = mpsc::channel();
+    thread::Builder::new()
         .name("state-hook-output".to_owned())
         .spawn(move || {
             let mut output = Vec::new();
-            stdout.read_to_end(&mut output).map(|_| output)
+            let read = stdout.read_to_end(&mut output).map(|_| output);
+            // Fails only once `run` has stopped waiting, so nobody is left to tell
+            let _ = sender.send(read);
         })?;
 
     let timeout = Duration::from_secs(config.timeout_secs.unwrap_or(DEFAULT_TIMEOUT_SECS));
+    let deadline = Instant::now() + timeout;
 
     match child.wait_timeout(timeout)? {
         Some(status) => {
             if status.success() {
-                let output = match reader.join() {
+                // Bounded by the hook's own deadline: a process the hook leaves
+                // behind can hold stdout open long after the hook has exited
+                let remaining = deadline.saturating_duration_since(Instant::now());
+                let output = match receiver.recv_timeout(remaining) {
                     Ok(read) => read?,
-                    Err(_) => fail!(HookError, "couldn't read the hook's output"),
+                    Err(RecvTimeoutError::Timeout) => {
+                        fail!(HookError, "hook output still open after {:?}", timeout)
+                    }
+                    Err(RecvTimeoutError::Disconnected) => {
+                        fail!(HookError, "couldn't read the hook's output")
+                    }
                 };
                 Ok(serde_json::from_slice(&output)?)
             } else {
@@ -81,6 +94,7 @@ pub struct Output {
 #[cfg(test)]
 mod tests {
     use crate::{config::chain::HookConfig, error::ErrorKind};
+    use std::time::{Duration, Instant};
 
     /// Build a config for a hook that runs the given shell snippet
     fn shell_hook(script: &str) -> HookConfig {
@@ -112,6 +126,24 @@ mod tests {
         .expect("a large but well-formed output should be read");
 
         assert_eq!(output.latest_block_height.value(), 5);
+    }
+
+    /// The timeout bounds the whole run, reading the output included: a process
+    /// the hook leaves behind holding stdout open must not hold up startup
+    #[test]
+    fn output_held_open_past_the_timeout_is_an_error() {
+        let mut config = shell_hook("echo '{\"latest_block_height\":\"5\"}'; sleep 5 &");
+        config.timeout_secs = Some(1);
+
+        let started = Instant::now();
+        let err = super::run(&config).expect_err("output held open past the timeout should fail");
+
+        assert_eq!(*err.kind(), ErrorKind::HookError);
+        assert!(
+            started.elapsed() < Duration::from_secs(4),
+            "took {:?}",
+            started.elapsed()
+        );
     }
 
     #[test]
