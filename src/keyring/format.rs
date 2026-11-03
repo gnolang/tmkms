@@ -64,6 +64,16 @@ pub enum Format {
     Gno,
 }
 
+/// Warning to emit for a Bech32 prefix that resembles gno.land's encoding
+/// without being decodable as it, wherever that prefix is applied.
+pub fn gno_prefix_warning(prefix: &str) -> Option<&'static str> {
+    (prefix == GNO_PUBKEY_PREFIX).then_some(
+        "the `gpub` prefix prints Bech32 over the legacy Tendermint amino layout, \
+         which gno.land cannot decode; a chain with `key_format = { type = \"gno\" }` \
+         prints the key gno.land accepts",
+    )
+}
+
 impl Format {
     /// Serialize a `CometbftKey` according to chain-specific rules
     pub fn serialize(&self, public_key: CometbftKey) -> String {
@@ -115,11 +125,7 @@ impl Format {
             Format::Bech32 {
                 consensus_key_prefix,
                 ..
-            } if consensus_key_prefix == GNO_PUBKEY_PREFIX => Some(
-                "key_format `bech32` with the `gpub` prefix prints Bech32 over the legacy \
-                 Tendermint amino layout, which gno.land cannot decode; \
-                 use `key_format = { type = \"gno\" }` to print the key gno.land accepts",
-            ),
+            } => gno_prefix_warning(consensus_key_prefix),
             _ => None,
         }
     }
@@ -292,6 +298,15 @@ mod tests {
                 .unwrap()
                 .contains("gno.land cannot decode")
         );
+    }
+
+    #[test]
+    fn the_gno_prefix_warns_whatever_applies_it() {
+        let warning = gno_prefix_warning("gpub").expect("gpub should warn");
+
+        assert!(warning.contains("gno.land cannot decode"));
+        assert!(gno_prefix_warning("cosmosvalconspub").is_none());
+        assert!(gno_prefix_warning("").is_none());
     }
 
     #[test]
