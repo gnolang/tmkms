@@ -23,7 +23,7 @@ YubiHSM 2 support:
 following method.
 
 ```
-$ git clone https://github.com/iqlusioninc/tmkms.git && cd tmkms
+$ git clone https://github.com/gnolang/tmkms.git && cd tmkms
 [...]
 $ cargo build --release --features=yubihsm
 ```
@@ -507,7 +507,7 @@ Stored Wrap key 0x0001
 - `[hex string]`: raw AES-256-CCM wrap key to import
 
 [YubiHSM 2]: https://www.yubico.com/product/yubihsm-2/
-[toplevel README.md]: https://github.com/iqlusioninc/tmkms/blob/master/README.md#installation
+[toplevel README.md]: https://github.com/gnolang/tmkms/blob/main/README.md#installation
 [crates.io]: https://crates.io
 [crates.io index]: https://github.com/rust-lang/crates.io-index
 [BIP39]: https://github.com/bitcoin/bips/blob/master/bip-0039.mediawiki
