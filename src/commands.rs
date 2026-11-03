@@ -40,7 +40,7 @@ pub enum KmsCommand {
     #[clap(subcommand)]
     Softsign(SoftsignCommand),
 
-    /// start the KMS application"
+    /// start the KMS application
     Start(StartCommand),
 
     /// display the version
