@@ -273,8 +273,8 @@ impl ReadMsg<proto::privval::Message> for ProtocolTester {
 
 impl WriteMsg<proto::privval::Message> for ProtocolTester {
     fn write_msg(&mut self, msg: &proto::privval::Message) -> p2p::Result<()> {
-        self.tcp_connection.write_msg(&msg)?;
-        self.unix_connection.write_msg(&msg)?;
+        self.tcp_connection.write_msg(msg)?;
+        self.unix_connection.write_msg(msg)?;
         Ok(())
     }
 }
