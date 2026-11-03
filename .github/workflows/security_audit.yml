@@ -10,13 +10,14 @@ on:
   schedule:
     - cron: "0 0 * * *"
 
-# `contents: read` is all the audit itself needs. The action also tries to
-# publish what it finds — a check run on pull requests, an issue on the nightly
-# schedule — and neither `checks: write` nor `issues: write` is granted, so the
-# advisory report exists only in the job log. This repository has issues
-# disabled, so the issue path cannot work whatever the token is allowed to do.
+# `contents: read` runs the audit; `checks: write` lets the action publish what
+# it finds as a check run, which is the path it takes for pull requests and for
+# pushes. The nightly schedule takes the other path and files an issue instead,
+# needing `issues: write` — not granted, and this repository has issues
+# disabled, so a scheduled run reports through its own log alone.
 permissions:
   contents: read
+  checks: write
 
 jobs:
   security_audit:
