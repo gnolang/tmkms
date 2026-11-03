@@ -24,7 +24,7 @@ fn keys_generate_command_test() {
 #[cfg(feature = "yubihsm-mock")]
 #[test]
 fn warns_on_a_gno_prefix() {
-    let cmd_out = cli::run_successfully(&[
+    let cmd_out = cli::run_successfully([
         "yubihsm",
         "keys",
         "generate",
@@ -51,7 +51,7 @@ fn warns_on_a_gno_prefix() {
 #[cfg(feature = "yubihsm-mock")]
 #[test]
 fn does_not_warn_on_another_prefix() {
-    let cmd_out = cli::run_successfully(&[
+    let cmd_out = cli::run_successfully([
         "yubihsm",
         "keys",
         "generate",
