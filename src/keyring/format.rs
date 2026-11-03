@@ -322,6 +322,19 @@ mod tests {
         assert!(gno_prefix_warning("").is_none());
     }
 
+    /// A chain's remedy is a setting it can change; the command's is another
+    /// command. One shared message sends an operator to the wrong one.
+    #[test]
+    fn each_gno_prefix_warning_names_its_own_remedy() {
+        let chain = gno_prefixed_bech32()
+            .misleading_gno_prefix_warning()
+            .expect("a `gpub` consensus prefix should warn");
+        let command = gno_prefix_warning("gpub").expect("`gpub` should warn");
+
+        assert!(chain.contains(r#"use `key_format = { type = "gno" }`"#));
+        assert!(command.contains("`tmkms yubihsm keys list`"));
+    }
+
     #[test]
     fn other_formats_do_not_warn() {
         assert!(Format::Gno.misleading_gno_prefix_warning().is_none());
