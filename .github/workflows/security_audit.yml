@@ -10,6 +10,12 @@ on:
   schedule:
     - cron: "0 0 * * *"
 
+# The advisory check only reads the tree. It is deliberately not granted
+# `issues: write`: filing advisories as issues automatically is a separate
+# decision, not a consequence of tightening permissions.
+permissions:
+  contents: read
+
 jobs:
   security_audit:
     name: Security Audit Workspace
