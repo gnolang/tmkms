@@ -5,9 +5,9 @@
 ![MSRV][rustc-image]
 
 > **This is a hardened fork of [iqlusioninc/tmkms].** It carries security and
-> correctness fixes on top of upstream `0.15.0`, some of which are secure by
-> default and reject configurations upstream accepted, plus additions specific to
-> gno.land. See **[FORK.md](./FORK.md)** for the full list and the behaviour
+> correctness fixes on top of upstream `0.15.0` — some of which are secure by
+> default and reject configurations upstream accepted — plus additions specific
+> to gno.land. See **[FORK.md](./FORK.md)** for the full list and the behaviour
 > changes to check before upgrading.
 
 Key Management System for [CometBFT] (formerly [Tendermint]) applications such
