@@ -229,7 +229,7 @@ limitations under the License.
 [build-image]: https://github.com/gnolang/tmkms/actions/workflows/ci.yml/badge.svg
 [build-link]: https://github.com/gnolang/tmkms/actions/workflows/ci.yml
 [license-image]: https://img.shields.io/badge/license-Apache2.0-blue.svg
-[license-link]: https://github.com/gnolang/tmkms/blob/main/LICENSE
+[license-link]: ./LICENSE
 [rustc-image]: https://img.shields.io/badge/rustc-1.85+-blue.svg
 [//]: # 'links'
 
@@ -237,9 +237,9 @@ limitations under the License.
 [CometBFT]: https://cometbft.com/
 [Tendermint]: https://tendermint.com/
 [Cosmos Validators]: https://hub.cosmos.network/main/validators/validator-faq
-[YubiHSM2]: https://github.com/gnolang/tmkms/blob/main/README.yubihsm.md
+[YubiHSM2]: ./README.yubihsm.md
 [Ledger]: https://www.ledger.com/
 [ed25519-dalek]: https://github.com/dalek-cryptography/ed25519-dalek
 [supported Rust platform]: https://forge.rust-lang.org/platform-support.html
 [libusb]: https://libusb.info/
-[Dockerfile]: https://github.com/gnolang/tmkms/blob/main/Dockerfile
+[Dockerfile]: ./Dockerfile
