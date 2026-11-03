@@ -7,7 +7,7 @@ pub struct HookConfig {
     /// Command (with arguments) to invoke
     pub cmd: Vec<String>,
 
-    /// Timeout (in seconds) to wait when executing the command (default 5)
+    /// Time limit (in seconds) for the command to exit and close its stdout (default 1)
     pub timeout_secs: Option<u64>,
 
     /// Whether or not to fail open or closed if this command fails to execute.
