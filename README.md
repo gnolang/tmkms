@@ -111,8 +111,8 @@ NOTE (x86_64 only): Configure `RUSTFLAGS` environment variable:
 `export RUSTFLAGS=-Ctarget-feature=+aes,+ssse3`
 
 This fork is not published to crates.io, so `cargo install tmkms` fetches
-upstream rather than this code. Build it from source as below, or use the
-container image named in [FORK.md](./FORK.md).
+upstream rather than this code, without the fixes [FORK.md](./FORK.md)
+describes. Build from source as below, or use the container image it names.
 
 ### Compiling from source code (via git)
 
