@@ -33,28 +33,10 @@ If successful, this will produce a `tmkms` executable located at
 
 ### Installing with the `cargo install` command
 
-With Rust (1.40+) installed, you can install tmkms with the following:
-
-```
-cargo install tmkms --features=yubihsm
-```
-
-Or to install a specific version (recommended):
-
-```
-cargo install tmkms --features=yubihsm --version=0.4.0
-```
-
-This command installs `tmkms` directly from packages hosted on Rust's
-[crates.io] service. Package authenticity is verified via the
-[crates.io index] (itself a git repository) and by SHA-256 digests of
-released artifacts.
-
-However, if newer dependencies are available, it may use newer versions
-besides the ones which are "locked" in the source code repository. We
-cannot verify those dependencies do not contain malicious code. If you would
-like to ensure the dependencies in use are identical to the main repository,
-please build from source code instead.
+This fork is not published to crates.io, so `cargo install tmkms` fetches
+upstream rather than this code, without the fixes described in
+[FORK.md](./FORK.md). Build from source as above, or use the container image
+named in FORK.md.
 
 ### Verifying YubiHSM support was included in a build
 
@@ -127,12 +109,6 @@ either via:
 
 ```
 $ cargo build --release --features=yubihsm-server
-```
-
-or if you're using `cargo install`:
-
-```
-$ cargo install tmkms --features=yubihsm-server
 ```
 
 To enable the HTTP service, you'll need to add `connector_server` configuration
@@ -508,8 +484,6 @@ Stored Wrap key 0x0001
 
 [YubiHSM 2]: https://www.yubico.com/product/yubihsm-2/
 [toplevel README.md]: https://github.com/gnolang/tmkms/blob/main/README.md#installation
-[crates.io]: https://crates.io
-[crates.io index]: https://github.com/rust-lang/crates.io-index
 [BIP39]: https://github.com/bitcoin/bips/blob/master/bip-0039.mediawiki
 [yubihsm-setup]: https://developers.yubico.com/YubiHSM2/Component_Reference/yubihsm-setup/
 [yubihsm-shell]: https://developers.yubico.com/YubiHSM2/Component_Reference/yubihsm-shell/
