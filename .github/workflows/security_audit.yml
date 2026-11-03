@@ -10,9 +10,11 @@ on:
   schedule:
     - cron: "0 0 * * *"
 
-# The advisory check only reads the tree. It is deliberately not granted
-# `issues: write`: filing advisories as issues automatically is a separate
-# decision, not a consequence of tightening permissions.
+# `contents: read` is all the audit itself needs. The action also tries to
+# publish what it finds — a check run on pull requests, an issue on the nightly
+# schedule — and neither `checks: write` nor `issues: write` is granted, so the
+# advisory report exists only in the job log. This repository has issues
+# disabled, so the issue path cannot work whatever the token is allowed to do.
 permissions:
   contents: read
 
