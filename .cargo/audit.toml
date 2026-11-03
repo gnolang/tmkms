@@ -20,11 +20,14 @@ ignore = [
     # sdkms moves off hyper 0.14.
     "RUSTSEC-2026-0258",
     # crypto-bigint 0.5.5 (operations meant to be constant-time can branch on secret data).
-    # Reached through elliptic-curve 0.13, which k256, p256 and p384 build on. The fix is in
-    # 0.7.6, reachable only from elliptic-curve 0.14 and k256 0.14, but iq-cometbft 0.1.0 and
-    # yubihsm 0.42.1, both their newest releases, pin k256 0.13, so no update can clear it. A
-    # secret scalar reaches it in-process only when softsign signs with a secp256k1 account
-    # key: Ed25519 consensus keys go through curve25519-dalek, and YubiHSM and Ledger keys
-    # never leave the device. Revisit when iq-cometbft and yubihsm move to k256 0.14.
+    # Reached through elliptic-curve 0.13, which k256, p256, p384 and ecdsa build on, and
+    # which this crate, iq-cometbft and yubihsm all use. The only installable fix is 0.7.9 or
+    # later, which requires Rust 1.87, above this crate's 1.85 MSRV, and is reachable only
+    # from elliptic-curve 0.14. A secp256k1 secret passes through it whenever a k256 signing
+    # key is built in-process: softsign keygen, import, loading and signing, parsing a
+    # priv_validator key file, and yubihsm key import. Ed25519 consensus keys go through
+    # curve25519-dalek, and keys held in a YubiHSM or Ledger never leave the device. Revisit
+    # when the MSRV reaches 1.87 and this crate, iq-cometbft and yubihsm have all moved to
+    # elliptic-curve 0.14.
     "RUSTSEC-2026-0387",
 ]
