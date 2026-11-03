@@ -14,10 +14,10 @@ ignore = [
     "RUSTSEC-2026-0009",
     # h2 0.3.27 (unbounded queue of empty DATA frames). Reached only through sdkms ->
     # simple-hyper-client -> hyper 0.14 under the `fortanixdsm` feature, which the release
-    # image does not build. The fix is in h2 0.4, which needs hyper 1, and sdkms 0.5.1, its
-    # newest release, still uses hyper 0.14, so no update can clear it. The only peer able to
-    # send such frames is the Fortanix DSM endpoint the operator configures. Revisit when
-    # sdkms moves off hyper 0.14.
+    # image does not build. Even there it never runs: simple-hyper-client neither asks hyper
+    # for HTTP/2 nor negotiates it over ALPN, so the Fortanix DSM client speaks HTTP/1.1 only.
+    # The fix is h2 0.4.16, which only hyper 1 accepts, and sdkms 0.5.1, its newest release,
+    # still uses hyper 0.14, so no update can clear it. Revisit when sdkms moves to hyper 1.
     "RUSTSEC-2026-0258",
     # crypto-bigint 0.5.5 (operations meant to be constant-time can branch on secret data).
     # Reached through elliptic-curve 0.13, which k256, p256, p384 and ecdsa build on, and
