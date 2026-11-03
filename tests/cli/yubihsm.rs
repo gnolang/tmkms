@@ -13,4 +13,5 @@ pub const PRIV_VALIDATOR_CONFIG_PATH: &str = "tests/support/priv_validator_mock.
 // This test requires USB access to a YubiHSM2
 #[cfg(not(feature = "yubihsm-mock"))]
 mod detect;
+mod help;
 mod keys;
