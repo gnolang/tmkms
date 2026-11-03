@@ -69,7 +69,7 @@ Each of these is deliberate. Everything not listed here behaves as upstream 0.15
 - New warnings, not errors: key files readable by group or others, a freshly
   created state file with no signing history, and gno.land's `gpub` Bech32 prefix
   wherever it is applied — a `bech32` `key_format`'s consensus prefix, or
-  `yubihsm keys generate -p` (see #17).
+  `tmkms yubihsm keys generate -p` (see #17).
 
 ## Details
 
@@ -146,9 +146,9 @@ and the valoper realm panics on that error, so operators had to copy the key out
 `gnoland` logs for its validator and the valoper realm accepts. A `bech32`
 `key_format` whose `consensus_key_prefix` is `gpub` warns once per chain, both at
 start-up and in `tmkms yubihsm keys list`, pointing at the new format; so does
-`tmkms yubihsm keys generate -p gpub`, which has no chain to take a format
-from. Account keys
-and non-Ed25519 keys fall back to hex: gno.land's validators sign with Ed25519
+`tmkms yubihsm keys generate -p gpub`, which applies a prefix of its own without
+being scoped to a chain, so no `key_format` can steer it. Account keys and
+non-Ed25519 keys fall back to hex: gno.land's validators sign with Ed25519
 consensus keys, so no other key type has a gno encoding to print.
 
 Wrapping the key in an amino `Any` makes the payload 55 bytes, which Bech32 expands
