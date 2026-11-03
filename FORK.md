@@ -8,7 +8,7 @@ multi-agent security reviews of the whole tree, and gno.land-specific additions.
 It is published as a container image for gno.land validators:
 
 ```
-ghcr.io/aeddi/tmkms:v0.16.0-gno.3
+ghcr.io/gnolang/tmkms:v0.16.0-gno.4
 ```
 
 The fork is missing no upstream commits. Fixes are being prepared as individual
