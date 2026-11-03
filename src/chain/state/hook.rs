@@ -8,7 +8,9 @@ use crate::{
 use cometbft::block;
 use serde::Deserialize;
 use std::{
+    io::Read,
     process::{Command, Stdio},
+    thread,
     time::Duration,
 };
 use wait_timeout::ChildExt;
@@ -32,16 +34,28 @@ pub fn run(config: &HookConfig) -> Result<Output, Error> {
         .args(args)
         .stdout(Stdio::piped())
         .spawn()?;
+
+    // Drained while the hook runs rather than once it exits: a hook that writes
+    // more than the pipe holds blocks on that write until something reads it
+    let mut stdout = match child.stdout.take() {
+        Some(stdout) => stdout,
+        None => fail!(HookError, "couldn't consume stdout from child"),
+    };
+    let reader = thread::spawn(move || {
+        let mut output = Vec::new();
+        stdout.read_to_end(&mut output).map(|_| output)
+    });
+
     let timeout = Duration::from_secs(config.timeout_secs.unwrap_or(DEFAULT_TIMEOUT_SECS));
 
     match child.wait_timeout(timeout)? {
         Some(status) => {
             if status.success() {
-                if let Some(stdout) = child.stdout {
-                    Ok(serde_json::from_reader(stdout)?)
-                } else {
-                    fail!(HookError, "couldn't consume stdout from child");
-                }
+                let output = match reader.join() {
+                    Ok(read) => read?,
+                    Err(_) => fail!(HookError, "couldn't read the hook's output"),
+                };
+                Ok(serde_json::from_slice(&output)?)
             } else {
                 fail!(HookError, "subcommand returned status {:?}", status.code())
             }
@@ -81,6 +95,21 @@ mod tests {
             .expect("hook should produce output");
 
         assert_eq!(output.latest_block_height.value(), 12345);
+    }
+
+    /// Nothing may wait on the hook to exit before draining its stdout: a hook
+    /// that writes more than a pipe holds blocks on the write, never exits, and
+    /// the run would be reported as a timeout instead of read
+    #[test]
+    fn a_hook_writing_more_than_a_pipe_holds_is_still_read() {
+        // A mebibyte of leading whitespace, past any platform's pipe buffer,
+        // then the JSON a hook is expected to print
+        let output = super::run(&shell_hook(
+            "head -c 1048576 /dev/zero | tr '\\0' ' '; echo '{\"latest_block_height\":\"5\"}'",
+        ))
+        .expect("a large but well-formed output should be read");
+
+        assert_eq!(output.latest_block_height.value(), 5);
     }
 
     #[test]
