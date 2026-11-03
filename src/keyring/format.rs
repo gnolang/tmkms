@@ -64,8 +64,9 @@ pub enum Format {
     Gno,
 }
 
-/// Whether a Bech32 prefix is gno.land's, so the string it produces resembles a
-/// gno.land public key without being decodable as one.
+/// Whether a Bech32 prefix is gno.land's. Whether the string it prefixes is a
+/// gno.land public key depends on the payload: `Format::Gno` encodes one,
+/// `Format::Bech32` encodes the legacy Tendermint amino layout.
 fn is_gno_prefix(prefix: &str) -> bool {
     prefix == GNO_PUBKEY_PREFIX
 }
