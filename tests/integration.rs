@@ -139,7 +139,7 @@ impl KmsProcess {
         let mut config_file = NamedTempFile::new().unwrap();
         let pub_key = test_ed25519_signing_keypair().verifying_key();
         let peer_id = PublicKey::from(pub_key).peer_id();
-        let state_path = state_dir.path().join("state.json").display().to_string();
+        let state_path = seeded_state_file(state_dir);
         let secret_key = owner_only_copy(SECRET_CONNECTION_KEY_PATH, state_dir);
         let signing_key = owner_only_copy(signing_key_path(key_type), state_dir);
 
@@ -177,7 +177,7 @@ impl KmsProcess {
     ) -> NamedTempFile {
         let mut config_file = NamedTempFile::new().unwrap();
         let key_path = owner_only_copy(signing_key_path(key_type), state_dir);
-        let state_path = state_dir.path().join("state.json").display().to_string();
+        let state_path = seeded_state_file(state_dir);
         writeln!(
             config_file,
             r#"
@@ -309,6 +309,14 @@ fn signing_key_path(key_type: &KeyType) -> &'static str {
     }
 }
 
+/// Create the state file a fresh KMS would, with the KMS's own code, so that it loads
+/// the file instead of warning that double-sign protection has no history
+fn seeded_state_file(dir: &TempDir) -> String {
+    let path = dir.path().join("state.json");
+    tmkms::chain::State::load_state(&path).unwrap();
+    path.display().to_string()
+}
+
 /// Copy a key fixture into `dir` as a file only its owner can read, the way a real
 /// deployment keeps it, and return the copy's path
 fn owner_only_copy(fixture: &str, dir: &TempDir) -> String {
@@ -316,6 +324,29 @@ fn owner_only_copy(fixture: &str, dir: &TempDir) -> String {
     fs::copy(fixture, &path).unwrap();
     fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).unwrap();
     path.display().to_string()
+}
+
+/// A KMS that finds no state file warns that double-sign protection has no history,
+/// so every config the harness writes must point at a state file that already exists
+#[test]
+fn generated_configs_point_at_an_existing_state_file() {
+    for key_type in [KeyType::Account, KeyType::Consensus] {
+        let (tcp_dir, unix_dir) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+        let configs = [
+            KmsProcess::create_tcp_config(60000, &key_type, &tcp_dir),
+            KmsProcess::create_unix_config("/tmp/tmkms-unused.sock", &key_type, &unix_dir),
+        ];
+
+        for config in configs {
+            let config: toml::Table =
+                toml::from_str(&fs::read_to_string(config.path()).unwrap()).unwrap();
+
+            for chain in config["chain"].as_array().unwrap() {
+                let path = chain["state_file"].as_str().unwrap();
+                assert!(Path::new(path).exists(), "{path} does not exist yet");
+            }
+        }
+    }
 }
 
 /// The KMS warns about any key file others can read, and git stores the committed
