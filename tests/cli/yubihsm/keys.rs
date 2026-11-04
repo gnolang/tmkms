@@ -4,7 +4,7 @@ mod generate;
 mod import;
 mod list;
 
-pub use super::{KMS_CONFIG_PATH, PRIV_VALIDATOR_CONFIG_PATH};
+pub use super::{KMS_CONFIG_PATH, PRIV_VALIDATOR_CONFIG_PATH, SECP256K1_PRIV_VALIDATOR_PATH};
 use crate::cli;
 
 #[test]
