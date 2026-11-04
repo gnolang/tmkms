@@ -8,7 +8,7 @@ use cometbft::{PrivateKey, PublicKey};
 use cometbft_config::PrivValidatorKey;
 use std::{fs, path::PathBuf, process};
 use subtle_encoding::base64;
-use yubihsm::object;
+use yubihsm::{Client, object};
 use zeroize::Zeroizing;
 
 /// The `yubihsm keys import` subcommand
@@ -44,13 +44,13 @@ const NO_KEY_ID: &str =
 
 impl Runnable for ImportCommand {
     fn run(&self) {
-        // The first connection to the HSM ends the process when it fails, and later uses
-        // reuse it, so connect before any secret is in memory
-        drop(crate::yubihsm::client());
+        // Connecting to the HSM ends the process when it fails, so connect before any
+        // secret is in memory
+        let hsm = crate::yubihsm::client();
 
         // Exit only here, once `import` has returned and dropped every secret it held:
         // `process::exit` runs no destructors, so nothing would wipe them
-        if let Err(message) = self.import() {
+        if let Err(message) = self.import(&hsm) {
             status_err!("{}", message);
             process::exit(1);
         }
@@ -59,7 +59,7 @@ impl Runnable for ImportCommand {
 
 impl ImportCommand {
     /// Import the key file, returning what went wrong as the message the operator reads
-    fn import(&self) -> Result<(), String> {
+    fn import(&self, hsm: &Client) -> Result<(), String> {
         // The file holds key material, so wipe the buffer when this scope ends
         let contents = Zeroizing::new(
             fs::read_to_string(&self.path)
@@ -67,22 +67,22 @@ impl ImportCommand {
         );
 
         match self.key_type.as_deref() {
-            Some("wrap") => self.import_wrapped(&contents),
-            Some("json") => self.import_priv_validator_json(&contents),
-            Some("base64") => self.import_base64(&contents),
+            Some("wrap") => self.import_wrapped(hsm, &contents),
+            Some("json") => self.import_priv_validator_json(hsm, &contents),
+            Some("base64") => self.import_base64(hsm, &contents),
             Some(other) => Err(format!("invalid key type: {other}")),
             None => {
                 if self.path.ends_with("priv_validator_key.json") {
-                    self.import_priv_validator_json(&contents)
+                    self.import_priv_validator_json(hsm, &contents)
                 } else {
-                    self.import_wrapped(&contents)
+                    self.import_wrapped(hsm, &contents)
                 }
             }
         }
     }
 
     /// Import a wrapped object into the HSM
-    fn import_wrapped(&self, wrapped_key_base64: &str) -> Result<(), String> {
+    fn import_wrapped(&self, hsm: &Client, wrapped_key_base64: &str) -> Result<(), String> {
         if let Some(id) = self.key_id {
             status_warn!("ignoring key ID: {} (wrapped keys use original key ID)", id);
         }
@@ -113,8 +113,6 @@ impl ImportCommand {
                     e
                 )
             })?;
-
-        let hsm = crate::yubihsm::client();
 
         let obj = hsm
             .import_wrapped(wrap_key_id, wrapped_message)
@@ -161,7 +159,7 @@ impl ImportCommand {
     }
 
     /// Import an existing priv_validator file into the HSM
-    fn import_priv_validator_json(&self, json_data: &str) -> Result<(), String> {
+    fn import_priv_validator_json(&self, hsm: &Client, json_data: &str) -> Result<(), String> {
         if let Some(id) = self.wrap_key_id {
             status_warn!(
                 "ignoring wrapkey ID: {} (not applicable to priv_validator.json files)",
@@ -186,23 +184,22 @@ impl ImportCommand {
 
         let label = object::Label::from(self.label.as_ref().map(|l| l.as_ref()).unwrap_or(""));
 
-        crate::yubihsm::client()
-            .put_asymmetric_key(
-                key_id,
-                label,
-                DEFAULT_DOMAINS,
-                yubihsm::Capability::SIGN_EDDSA | yubihsm::Capability::EXPORTABLE_UNDER_WRAP,
-                yubihsm::asymmetric::Algorithm::Ed25519,
-                seed.as_bytes(),
-            )
-            .map_err(|e| format!("couldn't import key #{key_id}: {e}"))?;
+        hsm.put_asymmetric_key(
+            key_id,
+            label,
+            DEFAULT_DOMAINS,
+            yubihsm::Capability::SIGN_EDDSA | yubihsm::Capability::EXPORTABLE_UNDER_WRAP,
+            yubihsm::asymmetric::Algorithm::Ed25519,
+            seed.as_bytes(),
+        )
+        .map_err(|e| format!("couldn't import key #{key_id}: {e}"))?;
 
         status_ok!("Imported", "key 0x{:04x}", key_id);
         Ok(())
     }
 
     /// Import a Base64-encoded private key into the HSM
-    fn import_base64(&self, base64_data: &str) -> Result<(), String> {
+    fn import_base64(&self, hsm: &Client, base64_data: &str) -> Result<(), String> {
         if let Some(id) = self.wrap_key_id {
             status_warn!(
                 "ignoring wrapkey ID: {} (not applicable to priv_validator.json files)",
@@ -227,26 +224,39 @@ impl ImportCommand {
 
         let label = object::Label::from(self.label.as_ref().map(|l| l.as_ref()).unwrap_or(""));
 
-        crate::yubihsm::client()
-            .put_asymmetric_key(
-                key_id,
-                label,
-                DEFAULT_DOMAINS,
-                yubihsm::Capability::SIGN_EDDSA | yubihsm::Capability::EXPORTABLE_UNDER_WRAP,
-                yubihsm::asymmetric::Algorithm::Ed25519,
-                seed_bytes,
-            )
-            .map_err(|e| format!("couldn't import key #{key_id}: {e}"))?;
+        hsm.put_asymmetric_key(
+            key_id,
+            label,
+            DEFAULT_DOMAINS,
+            yubihsm::Capability::SIGN_EDDSA | yubihsm::Capability::EXPORTABLE_UNDER_WRAP,
+            yubihsm::asymmetric::Algorithm::Ed25519,
+            seed_bytes,
+        )
+        .map_err(|e| format!("couldn't import key #{key_id}: {e}"))?;
 
         status_ok!("Imported", "key 0x{:04x}", key_id);
         Ok(())
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "yubihsm-mock"))]
 mod tests {
     use super::*;
     use std::path::Path;
+    use yubihsm::{Connector, Credentials};
+
+    /// How the HSM behind `failing_hsm` ends its refusal of every command; what comes
+    /// before names a session number, which varies
+    const HSM_REFUSAL: &str = "invalid credentials for authentication key #1 (cryptogram mismatch)";
+
+    /// A mock HSM client with the wrong password, so every command it sends fails
+    fn failing_hsm() -> Client {
+        Client::create(
+            Connector::mockhsm(),
+            Credentials::from_password(1, b"wrong"),
+        )
+        .unwrap()
+    }
 
     /// A command importing the file at `path` as `key_type`
     fn import_command(key_type: &str, key_id: Option<u16>, path: &Path) -> ImportCommand {
@@ -263,6 +273,7 @@ mod tests {
     /// must come back to `run` instead, after those have been dropped.
     #[test]
     fn failures_come_back_to_run() {
+        let hsm = failing_hsm();
         let dir = tempfile::tempdir().unwrap();
         let file = |name: &str, contents: &str| {
             let path = dir.path().join(name);
@@ -334,7 +345,45 @@ mod tests {
         ];
 
         for (command, message) in cases {
-            assert_eq!(command.import(), Err(message));
+            assert_eq!(command.import(&hsm), Err(message));
+        }
+    }
+
+    /// The HSM's own failures come once the key is decoded, so they must come back to
+    /// `run` too
+    #[test]
+    fn hsm_failures_come_back_to_run() {
+        let hsm = failing_hsm();
+        let dir = tempfile::tempdir().unwrap();
+        let wrapped = dir.path().join("wrapped");
+        fs::write(&wrapped, format!("{}=", "A".repeat(43))).unwrap();
+        let json = Path::new("tests/support/priv_validator_mock.json");
+        let seed = Path::new("tests/support/signing_ed25519.key");
+
+        let cases = [
+            (
+                import_command("json", Some(1), json),
+                "couldn't import key #1: ".to_owned(),
+            ),
+            (
+                import_command("base64", Some(1), seed),
+                "couldn't import key #1: ".to_owned(),
+            ),
+            (
+                import_command("wrap", None, &wrapped),
+                format!(
+                    "error importing encrypted key from {} (using wrapkey 0x0001): ",
+                    wrapped.display()
+                ),
+            ),
+        ];
+
+        for (command, reason) in cases {
+            let message = command.import(&hsm).unwrap_err();
+            assert!(
+                message.starts_with(&reason) && message.ends_with(HSM_REFUSAL),
+                "{message}"
+            );
         }
     }
 }
