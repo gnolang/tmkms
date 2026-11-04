@@ -2,7 +2,6 @@
 
 use chrono::{DateTime, Utc};
 use cometbft_p2p::{self as p2p, IdentitySecret, PublicKey, ReadMsg, SecretConnection, WriteMsg};
-use rand::Rng;
 use signature::Verifier;
 use std::{
     fs::{self, File},
@@ -99,14 +98,13 @@ struct KmsProcess {
 impl KmsProcess {
     /// Spawn the KMS process and wait for an incoming TCP connection
     pub fn create_tcp(key_type: &KeyType) -> Self {
-        // Generate a random port and a config file
-        let port: u16 = rand::thread_rng().gen_range(60000..=65535);
+        // Listen on a port the OS picks, which no other process can hold
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let port = listener.local_addr().unwrap().port();
+
         let kms_dir = tempfile::tempdir().unwrap();
         let config = KmsProcess::create_tcp_config(port, key_type, &kms_dir);
-
-        // Listen on a random port
-        let listener = TcpListener::bind(format!("{}:{}", "127.0.0.1", port)).unwrap();
-        listener.set_nonblocking(true).unwrap();
 
         let mut process = KmsProcess::spawn(&config, &kms_dir);
 
@@ -129,12 +127,10 @@ impl KmsProcess {
 
     /// Like `create_unix`, with `prepare` changing the KMS's directory before the KMS starts
     fn create_unix_with(key_type: &KeyType, prepare: impl FnOnce(&Path)) -> Self {
-        // Create a random socket path and a config file
-        let mut rng = rand::thread_rng();
-        let letter: char = rng.gen_range(b'a'..=b'z') as char;
-        let number: u32 = rng.gen_range(0..=999999);
-        let socket_path = format!("/tmp/tmkms-{letter}{number:06}.sock");
+        // A socket in the KMS's own directory, which nothing else uses and which is
+        // removed with it
         let kms_dir = tempfile::tempdir().unwrap();
+        let socket_path = kms_dir.path().join("kms.sock").display().to_string();
         let config = KmsProcess::create_unix_config(&socket_path, key_type, &kms_dir);
         prepare(kms_dir.path());
 
