@@ -8,6 +8,8 @@ use std::{
 use super::KMS_EXE_PATH;
 
 mod init;
+#[cfg(feature = "softsign")]
+mod softsign;
 mod version;
 
 #[cfg(feature = "yubihsm")]
@@ -59,6 +61,23 @@ where
 #[should_panic(expected = "--- stderr ---")]
 fn a_failed_command_is_reported_with_both_streams() {
     run_successfully(["not-a-real-subcommand"]);
+}
+
+/// `text` without the ANSI colour codes `tmkms` writes even when not on a terminal
+pub fn without_colour_codes(text: &str) -> String {
+    let mut plain = String::new();
+    let mut chars = text.chars();
+
+    while let Some(c) = chars.next() {
+        if c == '\u{1b}' {
+            // A colour code runs from the escape character to the next `m`
+            chars.by_ref().find(|&c| c == 'm');
+        } else {
+            plain.push(c);
+        }
+    }
+
+    plain
 }
 
 #[test]
