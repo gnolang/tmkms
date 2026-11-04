@@ -5,7 +5,7 @@ use cometbft_p2p::{self as p2p, IdentitySecret, PublicKey, ReadMsg, SecretConnec
 use rand::Rng;
 use signature::Verifier;
 use std::{
-    fs,
+    fs::{self, File},
     io::{self, Cursor, Write},
     net::{TcpListener, TcpStream},
     os::unix::{
@@ -13,7 +13,9 @@ use std::{
         net::{UnixListener, UnixStream},
     },
     path::Path,
-    process::{Child, Command},
+    process::{Child, Command, ExitStatus},
+    thread,
+    time::{Duration, Instant},
 };
 use tempfile::{NamedTempFile, TempDir};
 use tmkms::{
@@ -37,6 +39,22 @@ const SIGNING_SECP256K1_KEY_PATH: &str = "tests/support/signing_secp256k1.key";
 
 /// Path to the KMS's identity key for the secret connection
 const SECRET_CONNECTION_KEY_PATH: &str = "tests/support/secret_connection.key";
+
+/// Name of a captured KMS log inside the KMS's state directory
+const KMS_LOG_FILE: &str = "kms.log";
+
+/// How long a KMS expected to exit may take before the test fails instead of hanging
+const KMS_EXIT_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// Where a spawned KMS writes its log
+#[derive(Clone, Copy)]
+enum KmsLog {
+    /// The test's own output, where any line the KMS logs breaks pristine test output
+    Inherited,
+
+    /// A file the test reads back, for a test that makes the KMS fail on purpose
+    Captured,
+}
 
 enum KmsSocket {
     /// TCP socket type
@@ -82,14 +100,14 @@ struct KmsProcess {
     /// A socket to KMS process
     socket: KmsSocket,
 
-    /// Directory holding this process's double-sign protection state file,
-    /// kept alive (and cleaned up) for the lifetime of the process
-    _state_dir: TempDir,
+    /// Directory holding this process's keys, double-sign protection state file and
+    /// captured log, kept alive (and cleaned up) for the lifetime of the process
+    state_dir: TempDir,
 }
 
 impl KmsProcess {
     /// Spawn the KMS process and wait for an incoming TCP connection
-    pub fn create_tcp(key_type: &KeyType) -> Self {
+    pub fn create_tcp(key_type: &KeyType, log: KmsLog) -> Self {
         // Generate a random port and a config file
         let port: u16 = rand::thread_rng().gen_range(60000..=65535);
         let state_dir = tempfile::tempdir().unwrap();
@@ -98,19 +116,18 @@ impl KmsProcess {
         // Listen on a random port
         let listener = TcpListener::bind(format!("{}:{}", "127.0.0.1", port)).unwrap();
 
-        let args = &["start", "-c", config.path().to_str().unwrap()];
-        let process = Command::new(KMS_EXE_PATH).args(args).spawn().unwrap();
+        let process = KmsProcess::spawn(&config, log, &state_dir);
 
         let (socket, _) = listener.accept().unwrap();
         Self {
             process,
             socket: KmsSocket::Tcp(socket),
-            _state_dir: state_dir,
+            state_dir,
         }
     }
 
     /// Spawn the KMS process and connect to the Unix listener
-    pub fn create_unix(key_type: &KeyType) -> Self {
+    pub fn create_unix(key_type: &KeyType, log: KmsLog) -> Self {
         // Create a random socket path and a config file
         let mut rng = rand::thread_rng();
         let letter: char = rng.gen_range(b'a'..=b'z') as char;
@@ -123,15 +140,46 @@ impl KmsProcess {
         let listener = UnixListener::bind(socket_path).unwrap();
 
         // Fire up the KMS process and allow it to connect to our Unix socket
-        let args = &["start", "-c", config.path().to_str().unwrap()];
-        let process = Command::new(KMS_EXE_PATH).args(args).spawn().unwrap();
+        let process = KmsProcess::spawn(&config, log, &state_dir);
 
         let (socket, _) = listener.accept().unwrap();
         Self {
             process,
             socket: KmsSocket::Unix(socket),
-            _state_dir: state_dir,
+            state_dir,
         }
+    }
+
+    /// Start a KMS on `config`, its log going where `log` says
+    fn spawn(config: &NamedTempFile, log: KmsLog, state_dir: &TempDir) -> Child {
+        let mut kms = Command::new(KMS_EXE_PATH);
+        kms.args(["start", "-c", config.path().to_str().unwrap()]);
+
+        if let KmsLog::Captured = log {
+            let file = File::create(state_dir.path().join(KMS_LOG_FILE)).unwrap();
+            kms.stdout(file.try_clone().unwrap()).stderr(file);
+        }
+
+        kms.spawn().unwrap()
+    }
+
+    /// Wait for a KMS spawned with `KmsLog::Captured` to exit, and return how it exited
+    /// and what it logged
+    fn wait_for_exit(&mut self) -> (ExitStatus, String) {
+        let deadline = Instant::now() + KMS_EXIT_TIMEOUT;
+        let status = loop {
+            if let Some(status) = self.process.try_wait().unwrap() {
+                break status;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "KMS still running after {KMS_EXIT_TIMEOUT:?}"
+            );
+            thread::sleep(Duration::from_millis(10));
+        };
+        let log = fs::read_to_string(self.state_dir.path().join(KMS_LOG_FILE))
+            .expect("only a KMS spawned with KmsLog::Captured has a log");
+        (status, log)
     }
 
     /// Create a config file for a TCP KMS and return its path
@@ -190,6 +238,7 @@ impl KmsProcess {
             addr = "unix://{socket_path}"
             chain_id = "test_chain_id"
             max_height = "500000"
+            reconnect = false
 
             [[providers.softsign]]
             chain_ids = ["test_chain_id"]
@@ -236,13 +285,13 @@ struct ProtocolTester {
 }
 
 impl ProtocolTester {
-    pub fn apply<F>(key_type: &KeyType, functor: F)
+    pub fn apply<F>(key_type: &KeyType, log: KmsLog, functor: F)
     where
         F: FnOnce(ProtocolTester),
     {
-        let tcp_device = KmsProcess::create_tcp(key_type);
+        let tcp_device = KmsProcess::create_tcp(key_type, log);
         let tcp_connection = tcp_device.create_connection();
-        let unix_device = KmsProcess::create_unix(key_type);
+        let unix_device = KmsProcess::create_unix(key_type, log);
         let unix_connection = unix_device.create_connection();
 
         functor(Self {
@@ -418,7 +467,7 @@ fn handle_and_sign_proposal(key_type: KeyType) {
         nanos: dt.timestamp_subsec_nanos() as i32,
     };
 
-    ProtocolTester::apply(&key_type, |mut pt| {
+    ProtocolTester::apply(&key_type, KmsLog::Inherited, |mut pt| {
         let proposal = proto::types::v1beta1::Proposal {
             r#type: ConsensusMsgType::Proposal.into(),
             height: 12345,
@@ -492,7 +541,7 @@ fn handle_and_sign_vote(key_type: KeyType) {
         nanos: dt.timestamp_subsec_nanos() as i32,
     };
 
-    ProtocolTester::apply(&key_type, |mut pt| {
+    ProtocolTester::apply(&key_type, KmsLog::Inherited, |mut pt| {
         let vote_msg = proto::types::v1beta1::Vote {
             r#type: 0x01,
             height: 12345,
@@ -560,17 +609,17 @@ fn handle_and_sign_vote(key_type: KeyType) {
 }
 
 #[test]
-#[should_panic]
 fn test_exceed_max_height_account() {
     exceed_max_height(KeyType::Account)
 }
 
 #[test]
-#[should_panic]
 fn test_exceed_max_height_consensus() {
     exceed_max_height(KeyType::Consensus)
 }
 
+/// Asked to sign above its `max_height`, the KMS drops the connection without answering
+/// and exits with an error naming the stop height
 fn exceed_max_height(key_type: KeyType) {
     let chain_id = "test_chain_id";
 
@@ -580,7 +629,7 @@ fn exceed_max_height(key_type: KeyType) {
         nanos: dt.timestamp_subsec_nanos() as i32,
     };
 
-    ProtocolTester::apply(&key_type, |mut pt| {
+    ProtocolTester::apply(&key_type, KmsLog::Captured, |mut pt| {
         let vote_msg = proto::types::v1beta1::Vote {
             r#type: 0x01,
             height: 500001,
@@ -603,8 +652,6 @@ fn exceed_max_height(key_type: KeyType) {
             // extension_signature: vec![],
         };
 
-        let signable_msg = ConsensusMsg::try_from(vote_msg.clone()).unwrap();
-
         let vote = proto::privval::v1beta1::SignVoteRequest {
             vote: Some(vote_msg),
             chain_id: chain_id.into(),
@@ -613,37 +660,23 @@ fn exceed_max_height(key_type: KeyType) {
 
         send_request(proto::privval::message::Sum::SignVoteRequest(vote), &mut pt);
 
-        let response = match read_response(&mut pt) {
-            proto::privval::message::Sum::SignedVoteResponse(resp) => resp,
-            other => panic!("unexpected message type in response: {other:?}"),
-        };
+        for (connection, kms) in [
+            (&mut pt.tcp_connection, &mut pt.tcp_device),
+            (&mut pt.unix_connection, &mut pt.unix_device),
+        ] {
+            let response = connection.read_msg();
+            assert!(response.is_err(), "KMS answered: {response:?}");
 
-        let signable_bytes = signable_msg
-            .canonical_bytes(chain_id.parse().unwrap())
-            .unwrap();
-
-        let vote_msg = response
-            .vote
-            .expect("vote should be embedded int the response but none was found");
-
-        let sig: Vec<u8> = vote_msg.signature;
-        assert_ne!(sig.len(), 0);
-
-        let r = match key_type {
-            KeyType::Account => {
-                let signature = k256::ecdsa::Signature::try_from(sig.as_slice()).unwrap();
-                test_secp256k1_keypair()
-                    .1
-                    .verify(&signable_bytes, &signature)
-            }
-            KeyType::Consensus => {
-                let signature = ed25519::Signature::try_from(sig.as_slice()).unwrap();
-                test_ed25519_signing_keypair()
-                    .verifying_key()
-                    .verify(&signable_bytes, &signature)
-            }
-        };
-        assert!(r.is_ok());
+            let (status, log) = kms.wait_for_exit();
+            assert_eq!(status.code(), Some(1), "{log}");
+            assert!(
+                log.contains(
+                    "requested signature above stop height: \
+                     attempted to sign at height 500001 which is greater than 500000"
+                ),
+                "{log}"
+            );
+        }
     });
 }
 
@@ -660,7 +693,7 @@ fn test_handle_and_sign_get_publickey_consensus() {
 fn handle_and_sign_get_publickey(key_type: KeyType) {
     let chain_id = "test_chain_id";
 
-    ProtocolTester::apply(&key_type, |mut pt| {
+    ProtocolTester::apply(&key_type, KmsLog::Inherited, |mut pt| {
         let request = proto::privval::v1beta1::PubKeyRequest {
             chain_id: chain_id.into(),
         };
@@ -694,7 +727,7 @@ fn handle_and_sign_get_publickey(key_type: KeyType) {
 fn test_handle_and_sign_ping_pong() {
     let key_type = KeyType::Consensus;
 
-    ProtocolTester::apply(&key_type, |mut pt| {
+    ProtocolTester::apply(&key_type, KmsLog::Inherited, |mut pt| {
         let request = proto::privval::v1beta1::PingRequest {};
         send_request(proto::privval::message::Sum::PingRequest(request), &mut pt);
         read_response(&mut pt);
