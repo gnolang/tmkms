@@ -116,11 +116,32 @@ pub struct Output {
 
 #[cfg(test)]
 mod tests {
-    use crate::{config::chain::HookConfig, error::ErrorKind};
+    use crate::{
+        config::chain::HookConfig,
+        error::{Error, ErrorKind},
+    };
     use std::{
         io::{self, Read},
+        sync::{Mutex, MutexGuard, PoisonError},
         time::{Duration, Instant},
     };
+
+    /// Held while a test runs a hook. On macOS a pipe is created before it is
+    /// marked close-on-exec, so a child spawned on another test thread in that
+    /// window inherits it. A child that outlives its own test, like the `sleep &`
+    /// below, would then hold another test's output open past its deadline.
+    static SPAWNING: Mutex<()> = Mutex::new(());
+
+    /// Wait until no other test is running a hook
+    fn spawning() -> MutexGuard<'static, ()> {
+        SPAWNING.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// Run a hook with no other test spawning one at the same time
+    fn run(config: &HookConfig) -> Result<super::Output, Error> {
+        let _spawning = spawning();
+        super::run(config)
+    }
 
     /// Build a config for a hook that runs the given shell snippet
     fn shell_hook(script: &str) -> HookConfig {
@@ -133,7 +154,7 @@ mod tests {
 
     #[test]
     fn reads_latest_block_height_from_hook_stdout() {
-        let output = super::run(&shell_hook("echo '{\"latest_block_height\":\"12345\"}'"))
+        let output = run(&shell_hook("echo '{\"latest_block_height\":\"12345\"}'"))
             .expect("hook should produce output");
 
         assert_eq!(output.latest_block_height.value(), 12345);
@@ -146,7 +167,7 @@ mod tests {
     fn a_hook_writing_more_than_a_pipe_holds_is_still_read() {
         // 256 KiB of leading whitespace, past any platform's pipe buffer and
         // short of the output limit, then the JSON a hook is expected to print
-        let output = super::run(&shell_hook(
+        let output = run(&shell_hook(
             "head -c 262144 /dev/zero | tr '\\0' ' '; echo '{\"latest_block_height\":\"5\"}'",
         ))
         .expect("a large but well-formed output should be read");
@@ -160,7 +181,7 @@ mod tests {
     #[test]
     fn output_past_the_limit_is_an_error() {
         // Two mebibytes of leading whitespace before otherwise valid JSON
-        let err = super::run(&shell_hook(
+        let err = run(&shell_hook(
             "head -c 2097152 /dev/zero | tr '\\0' ' '; echo '{\"latest_block_height\":\"5\"}'",
         ))
         .expect_err("output past the limit should be refused");
@@ -187,6 +208,8 @@ mod tests {
         let mut config = shell_hook("echo '{\"latest_block_height\":\"5\"}'; sleep 5 &");
         config.timeout_secs = Some(1);
 
+        // Timed from once the lock is held, so waiting on other tests does not count
+        let _spawning = spawning();
         let started = Instant::now();
         let err = super::run(&config).expect_err("output held open past the timeout should fail");
 
@@ -200,7 +223,7 @@ mod tests {
 
     #[test]
     fn nonzero_exit_status_is_an_error() {
-        let err = super::run(&shell_hook("exit 3")).expect_err("expected hook failure");
+        let err = run(&shell_hook("exit 3")).expect_err("expected hook failure");
 
         assert_eq!(*err.kind(), ErrorKind::HookError);
     }
@@ -213,7 +236,7 @@ mod tests {
             fail_closed: true,
         };
 
-        let err = super::run(&config).expect_err("expected an error for an empty command");
+        let err = run(&config).expect_err("expected an error for an empty command");
 
         assert_eq!(*err.kind(), ErrorKind::HookError);
     }
@@ -223,7 +246,7 @@ mod tests {
         let mut config = shell_hook("sleep 5");
         config.timeout_secs = Some(1);
 
-        let err = super::run(&config).expect_err("expected a timeout error");
+        let err = run(&config).expect_err("expected a timeout error");
 
         assert_eq!(*err.kind(), ErrorKind::HookError);
     }
