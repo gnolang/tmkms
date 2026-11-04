@@ -113,8 +113,11 @@ impl SetupCommand {
     /// Derive the admin mnemonic and every key from it, print them, and unless only
     /// printing, erase and reinitialize the HSM with them
     fn setup(&self) -> Result<(), Stop> {
+        // Reading a password file ends the process when it fails, so read the
+        // credentials once, before any secret exists
+        let credentials = crate::yubihsm::config().auth.credentials();
         let hsm_connector = crate::yubihsm::connector();
-        let hsm_serial_number = get_hsm_client(hsm_connector)?
+        let hsm_serial_number = get_hsm_client(hsm_connector, &credentials)?
             .device_info()
             .expect("error getting device info")
             .serial_number;
@@ -128,7 +131,7 @@ impl SetupCommand {
                 "*** Enter mnemonic (separate words with spaces): ",
             )?
         } else {
-            generate_mnemonic_from_hsm_and_os_csprngs(hsm_connector)?
+            generate_mnemonic_from_hsm_and_os_csprngs(hsm_connector, &credentials)?
         };
 
         let roles = derive_roles_from_mnemonic(&mnemonic);
@@ -201,7 +204,7 @@ impl SetupCommand {
 
         let report = yubihsm::setup::erase_device_and_init_with_profile(
             hsm_connector.clone(),
-            crate::yubihsm::config().auth.credentials(),
+            credentials,
             profile,
         )
         .map_err(Stop::hsm)?;
@@ -273,13 +276,11 @@ fn print_mnemonic(mnemonic: &mnemonic::Phrase) {
 /// We need to create our own client here since the global one maintains
 /// a persistent connection, and we need to close this one before we can
 /// reprovision the HSM
-fn get_hsm_client(hsm_connector: &Connector) -> Result<yubihsm::Client, Stop> {
-    yubihsm::Client::open(
-        hsm_connector.clone(),
-        crate::yubihsm::config().auth.credentials(),
-        false,
-    )
-    .map_err(Stop::hsm)
+fn get_hsm_client(
+    hsm_connector: &Connector,
+    credentials: &Credentials,
+) -> Result<yubihsm::Client, Stop> {
+    yubihsm::Client::open(hsm_connector.clone(), credentials.clone(), false).map_err(Stop::hsm)
 }
 
 /// Generate entropy by combining entropy both from the host OS and from the
@@ -291,8 +292,9 @@ fn get_hsm_client(hsm_connector: &Connector) -> Result<yubihsm::Client, Stop> {
 /// one of the two inputs is secure.
 fn generate_mnemonic_from_hsm_and_os_csprngs(
     hsm_connector: &Connector,
+    credentials: &Credentials,
 ) -> Result<mnemonic::Phrase, Stop> {
-    let hsm_client = get_hsm_client(hsm_connector)?;
+    let hsm_client = get_hsm_client(hsm_connector, credentials)?;
 
     // Obtain half of the IKM from the YubiHSM (256-bits)
     let mut ikm = hsm_client.get_pseudo_random(KEY_SIZE).map_err(Stop::hsm)?;

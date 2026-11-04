@@ -1,7 +1,12 @@
 //! Integration tests for the `yubihsm setup` subcommand, against the mock HSM
 
 use crate::cli;
-use std::str;
+use std::{
+    fs,
+    io::{Read, Write},
+    process::{Command, Stdio},
+    str,
+};
 
 /// A valid 24-word admin mnemonic, so that everything derived from it is known
 const MNEMONIC: &str = "abandon amount liar amount expire adjust cage candy arch gather drum \
@@ -104,4 +109,62 @@ fn setup_reinitializes_the_hsm_when_the_erase_is_confirmed() {
     );
     assert!(stdout.starts_with(&before_erase), "{stdout}");
     assert!(stdout.contains("installing wrap key: primary:"), "{stdout}");
+}
+
+/// Setup reads the HSM password file before it derives any secret. Reading it fails by
+/// ending the process, so a read after that point would skip wiping every secret.
+#[test]
+fn setup_reads_its_password_file_before_deriving_secrets() {
+    let dir = tempfile::tempdir().unwrap();
+    let password_file = dir.path().join("password");
+    fs::write(&password_file, "password\n").unwrap();
+    let config = dir.path().join("tmkms.toml");
+    let mock_config = fs::read_to_string(super::KMS_CONFIG_PATH).unwrap();
+    let password_line = r#"auth = { key = 1, password = "password" }"#;
+    assert!(mock_config.contains(password_line));
+    fs::write(
+        &config,
+        mock_config.replace(
+            password_line,
+            &format!(
+                r#"auth = {{ key = 1, password_file = "{}" }}"#,
+                password_file.display()
+            ),
+        ),
+    )
+    .unwrap();
+
+    let mut setup = Command::new(crate::KMS_EXE_PATH)
+        .args(["yubihsm", "setup", "-c", config.to_str().unwrap(), "-r"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let mut stdin = setup.stdin.take().unwrap();
+    let mut stdout = setup.stdout.take().unwrap();
+    stdin.write_all(format!("{MNEMONIC}\n").as_bytes()).unwrap();
+
+    // Once setup asks to confirm, every secret exists: take the password file away
+    let mut printed = Vec::new();
+    let mut byte = [0];
+    while !printed.ends_with(CONFIRMATION.as_bytes()) && stdout.read(&mut byte).unwrap() == 1 {
+        printed.push(byte[0]);
+    }
+    fs::remove_file(&password_file).unwrap();
+    stdin.write_all(b"y\n").unwrap();
+    drop(stdin);
+    stdout.read_to_end(&mut printed).unwrap();
+
+    let out = setup.wait_with_output().unwrap();
+    let stderr = cli::without_colour_codes(str::from_utf8(&out.stderr).unwrap());
+    assert_eq!(
+        (out.status.code(), stderr.as_str()),
+        (
+            Some(0),
+            "     Success reinitialized YubiHSM (serial: 0123456789)\n"
+        ),
+        "{}",
+        String::from_utf8_lossy(&printed)
+    );
 }
