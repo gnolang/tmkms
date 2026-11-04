@@ -11,7 +11,6 @@ pub const KMS_GNO_PREFIX_CONFIG_PATH: &str = "tests/support/kms_yubihsm_mock_gno
 pub const PRIV_VALIDATOR_CONFIG_PATH: &str = "tests/support/priv_validator_mock.json";
 
 /// A priv_validator key file holding a secp256k1 key rather than an Ed25519 one
-#[allow(dead_code)]
 pub const SECP256K1_PRIV_VALIDATOR_PATH: &str = "tests/support/priv_validator_secp256k1_mock.json";
 
 // This test requires USB access to a YubiHSM2
