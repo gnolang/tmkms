@@ -2,7 +2,7 @@
 
 mod detect;
 pub mod keys;
-mod setup;
+pub mod setup;
 mod test;
 
 pub use self::{detect::DetectCommand, keys::KeysCommand, setup::SetupCommand, test::TestCommand};
