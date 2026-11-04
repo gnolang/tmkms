@@ -43,7 +43,7 @@ liveness/DoS > hygiene.
 | 11  | `tmkms init` will not destroy an existing identity key without `-f`            | **Medium** | Data loss           |
 | 12  | Disk failures are no longer reported as "attempted double sign"                | **Low**    | Observability       |
 | 13  | Bounded TCP connect, Unix-socket timeouts, no peer payloads in logs            | **Low**    | Liveness/DoS        |
-| 14  | Zeroization in key load, keygen and `yubihsm keys import`, except JSON keys    | **Low**    | Hygiene             |
+| 14  | Zeroization gaps closed in key load, keygen, `yubihsm keys import` (see below) | **Low**    | Hygiene             |
 | 15  | Dependencies refreshed, CI hardened, dev image off EOL centos:7                | **Low**    | Supply chain        |
 | 16  | `tmkms ledger init` can succeed at all, and honours the double-sign check      | **Low**    | Upstream bug (dead) |
 | 17  | A `gno` key format prints the public key gno.land accepts                      | **Low**    | gno.land addition   |
@@ -184,13 +184,19 @@ Signing is unaffected either way.
   `fortanixdsm` feature, which the release image does not build, and even there the
   Fortanix DSM client speaks HTTP/1.1, so it never runs. The fix needs hyper 1, which
   `sdkms` does not use.
-- **A JSON-format Ed25519 key is not wiped (#14).** `priv_validator_key.json` is
-  parsed by `iq-cometbft`, whose Ed25519 key type is a plain byte array that never
-  wipes itself and cannot be wiped from outside. Each parse leaves a copy of the
-  seed in freed memory: `yubihsm keys import`, `softsign import`, and loading a
-  softsign key with `key_format = "json"`. The last two also have
-  `iq-cometbft-config` read the file, so its contents are not wiped either. Revisit
-  when `iq-cometbft` wipes its keys.
+- **Key copies held inside two dependencies are not wiped (#14).** tmkms cannot
+  reach them:
+  - `iq-cometbft` parses every `priv_validator_key.json`, and its Ed25519 key type is
+    a plain byte array that never wipes itself and cannot be wiped from outside. Each
+    parse leaves the seed in freed memory: `yubihsm keys import`, `softsign import`,
+    and loading a `[[providers.softsign]]` key with `key_format = "json"`. The last two
+    also have `iq-cometbft-config` read the file, and that copy of its text is not
+    wiped either, whatever the key type.
+  - `yubihsm` copies a key into command buffers it frees without wiping, which
+    upstream marks as a TODO. So every key `yubihsm keys import` stores, Base64 or
+    JSON, leaves copies in freed memory.
+
+  Revisit when these crates wipe their key buffers.
 - **The container runs as root**, matching the previously published image, because
   key and state files arrive on a host-mounted volume whose ownership is managed
   outside the image.
