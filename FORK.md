@@ -193,9 +193,9 @@ Signing is unaffected either way.
     wiped either, whatever the key type.
   - `yubihsm` copies a key into command buffers it frees without wiping, which
     upstream marks as a TODO. So every key `yubihsm keys import` stores, Base64 or
-    JSON, and every key `yubihsm setup` installs leave copies in freed memory.
-  - A mnemonic typed into `yubihsm setup --restore` stays in the standard library's
-    stdin buffer, which nothing can wipe.
+    JSON, and every key `yubihsm setup` installs leaves copies in freed memory.
+  - The standard library's stdin and stdout buffers, which nothing can wipe, keep a
+    mnemonic typed into `yubihsm setup --restore` and parts of the keys setup prints.
 
   Revisit the first two when these crates wipe their key buffers.
 - **The container runs as root**, matching the previously published image, because
