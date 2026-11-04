@@ -150,10 +150,12 @@ impl KmsProcess {
         }
     }
 
-    /// Start a KMS on `config`, its log going where `log` says
+    /// Start a KMS on `config`, its log going where `log` says. It logs only warnings
+    /// and errors, so a healthy KMS logs nothing.
     fn spawn(config: &NamedTempFile, log: KmsLog, state_dir: &TempDir) -> Child {
         let mut kms = Command::new(KMS_EXE_PATH);
-        kms.args(["start", "-c", config.path().to_str().unwrap()]);
+        kms.args(["start", "-c", config.path().to_str().unwrap()])
+            .env("RUST_LOG", "warn");
 
         if let KmsLog::Captured = log {
             let file = File::create(state_dir.path().join(KMS_LOG_FILE)).unwrap();
@@ -396,6 +398,16 @@ fn generated_configs_point_at_an_existing_state_file() {
             }
         }
     }
+}
+
+/// Passing tests must print nothing, so a healthy KMS under test must log nothing
+#[test]
+fn healthy_kms_logs_nothing() {
+    let mut kms = KmsProcess::create_unix(&KeyType::Consensus, KmsLog::Captured);
+    kms.process.kill().unwrap();
+
+    let (_, log) = kms.wait_for_exit();
+    assert_eq!(log, "");
 }
 
 /// The KMS warns about any key file others can read, and git stores the committed
