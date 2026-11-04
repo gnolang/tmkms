@@ -5,14 +5,14 @@ use std::{fs, path::Path, str};
 use subtle_encoding::base64;
 use tempfile::TempDir;
 
-/// Arguments to run `yubihsm keys import` with `import_args`
-fn import_args<'a>(import_args: &[&'a str]) -> Vec<&'a str> {
+/// Arguments to run `yubihsm keys import` with `options`
+fn import_args<'a>(options: &[&'a str]) -> Vec<&'a str> {
     #[allow(unused_mut)]
     let mut args = vec!["yubihsm", "keys", "import"];
 
     #[cfg(feature = "yubihsm-mock")]
     args.extend_from_slice(&["-c", super::KMS_CONFIG_PATH]);
-    args.extend_from_slice(import_args);
+    args.extend_from_slice(options);
     args
 }
 
@@ -21,10 +21,16 @@ fn import_json_args(path: &str) -> Vec<&str> {
     import_args(&["-t", "json", "-i", "1", path])
 }
 
-/// Run `yubihsm keys import` with `args`, and return its exit code and what it wrote
-/// to stderr with the colour codes removed. It writes everything to stderr.
-fn import(args: &[&str]) -> (Option<i32>, String) {
-    let out = cli::run(import_args(args));
+/// Run `yubihsm keys import` with `options`, and return its exit code and what it
+/// wrote to stderr with the colour codes removed
+fn import(options: &[&str]) -> (Option<i32>, String) {
+    run_writing_only_stderr(&import_args(options))
+}
+
+/// Run `tmkms` with `args`, check that it wrote nothing to stdout, and return its exit
+/// code and what it wrote to stderr with the colour codes removed
+fn run_writing_only_stderr(args: &[&str]) -> (Option<i32>, String) {
+    let out = cli::run(args);
     assert_eq!(
         str::from_utf8(&out.stdout).unwrap(),
         "",
@@ -223,7 +229,7 @@ fn keys_import_connects_before_reading_the_key_file() {
     let config_without_hsm = key_file(&dir, "tmkms.toml", "[providers]\n");
     let missing_key = dir.path().join("missing").display().to_string();
 
-    let out = cli::run([
+    let args = [
         "yubihsm",
         "keys",
         "import",
@@ -234,14 +240,10 @@ fn keys_import_connects_before_reading_the_key_file() {
         "-i",
         "1",
         &missing_key,
-    ]);
+    ];
 
-    assert_eq!(str::from_utf8(&out.stdout).unwrap(), "");
     assert_eq!(
-        (
-            out.status.code(),
-            without_colour_codes(str::from_utf8(&out.stderr).unwrap())
-        ),
+        run_writing_only_stderr(&args),
         (
             Some(1),
             "error: expected one [[providers.yubihsm]] in config, found: 0\n".to_owned()
