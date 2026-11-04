@@ -160,14 +160,7 @@ impl ImportCommand {
 
     /// Import an existing priv_validator file into the HSM
     fn import_priv_validator_json(&self, hsm: &Client, json_data: &str) -> Result<(), String> {
-        if let Some(id) = self.wrap_key_id {
-            status_warn!(
-                "ignoring wrapkey ID: {} (not applicable to priv_validator.json files)",
-                id
-            );
-        }
-
-        let key_id = self.key_id.ok_or(NO_KEY_ID)?;
+        let key_id = self.ed25519_key_id()?;
 
         let private_key = PrivValidatorKey::parse_json(json_data)
             .map_err(|e| format!("couldn't parse priv_validator key: {e}"))?
@@ -182,32 +175,12 @@ impl ImportCommand {
             ));
         };
 
-        let label = object::Label::from(self.label.as_ref().map(|l| l.as_ref()).unwrap_or(""));
-
-        hsm.put_asymmetric_key(
-            key_id,
-            label,
-            DEFAULT_DOMAINS,
-            yubihsm::Capability::SIGN_EDDSA | yubihsm::Capability::EXPORTABLE_UNDER_WRAP,
-            yubihsm::asymmetric::Algorithm::Ed25519,
-            seed.as_bytes(),
-        )
-        .map_err(|e| format!("couldn't import key #{key_id}: {e}"))?;
-
-        status_ok!("Imported", "key 0x{:04x}", key_id);
-        Ok(())
+        self.put_ed25519_seed(hsm, key_id, seed.as_bytes())
     }
 
     /// Import a Base64-encoded private key into the HSM
     fn import_base64(&self, hsm: &Client, base64_data: &str) -> Result<(), String> {
-        if let Some(id) = self.wrap_key_id {
-            status_warn!(
-                "ignoring wrapkey ID: {} (not applicable to priv_validator.json files)",
-                id
-            );
-        }
-
-        let key_id = self.key_id.ok_or(NO_KEY_ID)?;
+        let key_id = self.ed25519_key_id()?;
 
         // TODO(tarcieri): constant-time string trimming
         let key_bytes = Zeroizing::new(
@@ -222,7 +195,25 @@ impl ImportCommand {
             .as_bytes()
             .ok_or("Ed25519 key must be provided as a 32-byte seed")?;
 
-        let label = object::Label::from(self.label.as_ref().map(|l| l.as_ref()).unwrap_or(""));
+        self.put_ed25519_seed(hsm, key_id, seed_bytes)
+    }
+
+    /// The key ID to import an Ed25519 key as, warning that a wrap key ID applies only
+    /// to wrapped keys
+    fn ed25519_key_id(&self) -> Result<u16, String> {
+        if let Some(id) = self.wrap_key_id {
+            status_warn!(
+                "ignoring wrapkey ID: {} (not applicable to priv_validator.json files)",
+                id
+            );
+        }
+
+        self.key_id.ok_or_else(|| NO_KEY_ID.to_owned())
+    }
+
+    /// Put an Ed25519 seed into the HSM as key `key_id`
+    fn put_ed25519_seed(&self, hsm: &Client, key_id: u16, seed: &[u8]) -> Result<(), String> {
+        let label = object::Label::from(self.label.as_deref().unwrap_or(""));
 
         hsm.put_asymmetric_key(
             key_id,
@@ -230,7 +221,7 @@ impl ImportCommand {
             DEFAULT_DOMAINS,
             yubihsm::Capability::SIGN_EDDSA | yubihsm::Capability::EXPORTABLE_UNDER_WRAP,
             yubihsm::asymmetric::Algorithm::Ed25519,
-            seed_bytes,
+            seed,
         )
         .map_err(|e| format!("couldn't import key #{key_id}: {e}"))?;
 
