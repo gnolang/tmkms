@@ -66,7 +66,8 @@ pub struct SetupCommand {
     pub write_report: Option<PathBuf>,
 }
 
-/// Why setup stopped before reinitializing the HSM
+/// Why setup stopped without reinitializing the HSM. An HSM failure can come after the
+/// erase, leaving the HSM erased but not set up.
 #[derive(Debug)]
 pub enum Stop {
     /// The mnemonic typed in to restore couldn't be decoded
