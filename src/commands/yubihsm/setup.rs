@@ -68,7 +68,7 @@ pub struct SetupCommand {
 
 /// Why setup stopped before reinitializing the HSM
 #[derive(Debug)]
-enum Stop {
+pub enum Stop {
     /// The mnemonic typed in to restore couldn't be decoded
     UndecodableMnemonic,
 
@@ -238,7 +238,7 @@ impl SetupCommand {
 }
 
 /// Read the mnemonic phrase from `input`, after printing `prompt`
-fn read_mnemonic(input: &mut impl BufRead, prompt: &str) -> Result<mnemonic::Phrase, Stop> {
+pub fn read_mnemonic(input: &mut impl BufRead, prompt: &str) -> Result<mnemonic::Phrase, Stop> {
     print!("{prompt}");
     io::stdout().flush().unwrap();
 
@@ -248,10 +248,12 @@ fn read_mnemonic(input: &mut impl BufRead, prompt: &str) -> Result<mnemonic::Phr
         .expect("error reading mnemonic from STDIN!");
 
     let input_words: Vec<_> = input_string.split_whitespace().collect();
-    let input_phrase = input_words.join(" ");
+    let input_phrase = Zeroizing::new(input_words.join(" "));
     input_string.zeroize();
 
-    let result = mnemonic::Phrase::new(input_phrase, BIP39_LANGUAGE)
+    // `Phrase::new` keeps its own copy, which it wipes, but drops what it is handed
+    // without wiping it, so it only borrows the phrase
+    let result = mnemonic::Phrase::new(input_phrase.as_str(), BIP39_LANGUAGE)
         .map_err(|_| Stop::UndecodableMnemonic)?;
 
     println!("\nMnemonic phrase decoded/checksummed successfully!\n");

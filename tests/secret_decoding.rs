@@ -1,6 +1,7 @@
 //! A Base64 key must not leave its decoded bytes in freed memory, even when it fails
-//! to decode partway. This is its own test binary because checking that needs a
-//! global allocator that inspects every buffer as it is freed.
+//! to decode partway, nor a typed mnemonic its words. This is its own test binary
+//! because checking that needs a global allocator that inspects every buffer as it is
+//! freed.
 
 use std::{
     alloc::{GlobalAlloc, Layout, System},
@@ -24,7 +25,19 @@ fn seed_middle() -> &'static [u8] {
 /// Set when a freed buffer still held `seed_middle()`
 static FREED_SEED: AtomicBool = AtomicBool::new(false);
 
-/// The system allocator, recording whether a freed buffer still held the seed
+/// An admin mnemonic as an operator types it into `yubihsm setup --restore`
+#[cfg(feature = "yubihsm")]
+const TYPED_MNEMONIC: &str = "abandon amount liar amount expire adjust cage candy arch gather \
+                              drum bullet absurd math era live bid rhythm alien crouch range \
+                              attend journey unaware\n";
+
+/// Words of `TYPED_MNEMONIC` that no other buffer in this process holds
+const MNEMONIC_WORDS: &[u8] = b"liar amount expire adjust cage candy";
+
+/// Set when a freed buffer still held `MNEMONIC_WORDS`
+static FREED_MNEMONIC: AtomicBool = AtomicBool::new(false);
+
+/// The system allocator, recording whether a freed buffer still held a secret
 struct SeedScanner;
 
 unsafe impl GlobalAlloc for SeedScanner {
@@ -40,6 +53,12 @@ unsafe impl GlobalAlloc for SeedScanner {
         {
             FREED_SEED.store(true, Ordering::SeqCst);
         }
+        if freed
+            .windows(MNEMONIC_WORDS.len())
+            .any(|w| w == MNEMONIC_WORDS)
+        {
+            FREED_MNEMONIC.store(true, Ordering::SeqCst);
+        }
         unsafe { System.dealloc(ptr, layout) }
     }
 }
@@ -48,7 +67,8 @@ unsafe impl GlobalAlloc for SeedScanner {
 static ALLOCATOR: SeedScanner = SeedScanner;
 
 /// One test, because the allocator's record is shared by everything in this process.
-/// It covers both readers of a Base64 key: key load and `yubihsm keys import`.
+/// It covers both readers of a Base64 key, key load and `yubihsm keys import`, and the
+/// mnemonic reader of `yubihsm setup`.
 #[test]
 fn a_base64_key_leaves_no_decoded_bytes_in_freed_memory() {
     let dir = tempfile::tempdir().unwrap();
@@ -98,6 +118,17 @@ fn a_base64_key_leaves_no_decoded_bytes_in_freed_memory() {
         assert!(
             !FREED_SEED.load(Ordering::SeqCst),
             "yubihsm keys import left a key that fails to decode in freed memory"
+        );
+    }
+
+    #[cfg(feature = "yubihsm")]
+    {
+        use tmkms::commands::yubihsm::setup::read_mnemonic;
+
+        drop(read_mnemonic(&mut TYPED_MNEMONIC.as_bytes(), "").unwrap());
+        assert!(
+            !FREED_MNEMONIC.load(Ordering::SeqCst),
+            "yubihsm setup left a typed mnemonic in freed memory"
         );
     }
 }
