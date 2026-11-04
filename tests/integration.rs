@@ -460,6 +460,38 @@ fn a_kms_that_dies_before_connecting_fails_its_test_with_its_log() {
     });
 }
 
+/// The harness keeps two warnings out of every other test, so this one checks that a
+/// KMS still gives them: about a key file others can read, and about a state file it
+/// had to create
+#[test]
+fn kms_warns_about_a_readable_key_and_a_missing_state_file() {
+    let mut kms = KmsProcess::create_unix_with(&KeyType::Consensus, |kms_dir| {
+        let key = kms_dir.join("signing_ed25519.key");
+        fs::set_permissions(key, fs::Permissions::from_mode(0o644)).unwrap();
+        fs::remove_file(kms_dir.join("state.json")).unwrap();
+    });
+    let key = kms.kms_dir.path().join("signing_ed25519.key");
+    let state = kms.kms_dir.path().join("state.json");
+    let log = kms.stop();
+
+    assert!(
+        log.contains(&format!(
+            "{} is readable by users other than its owner (mode 0644): \
+             restrict it with `chmod 600`",
+            key.display()
+        )),
+        "{log}"
+    );
+    assert!(
+        log.contains(&format!(
+            "[test_chain_id] no state file found: created {} at height 0, \
+             so double signing protection has no history",
+            state.display()
+        )),
+        "{log}"
+    );
+}
+
 /// A KMS that finds no state file warns that double-sign protection has no history,
 /// so every config the harness writes must point at a state file that already exists
 #[test]
