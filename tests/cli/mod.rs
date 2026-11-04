@@ -2,8 +2,7 @@
 
 use std::{
     ffi::OsStr,
-    io::Write,
-    process::{Command, Output, Stdio},
+    process::{Command, Output},
 };
 
 use super::KMS_EXE_PATH;
@@ -25,12 +24,16 @@ where
     Command::new(KMS_EXE_PATH).args(args).output().unwrap()
 }
 
-/// Run the `tmkms` CLI command with the given arguments, typing `stdin` into it
+/// Run the `tmkms` CLI command with the given arguments, typing `stdin` into it. Only
+/// the `yubihsm setup` tests, which need the mock HSM, type into a command.
+#[cfg(feature = "yubihsm-mock")]
 pub fn run_with_stdin<I, S>(args: I, stdin: &str) -> Output
 where
     I: IntoIterator<Item = S>,
     S: AsRef<OsStr>,
 {
+    use std::{io::Write, process::Stdio};
+
     let mut child = Command::new(KMS_EXE_PATH)
         .args(args)
         .stdin(Stdio::piped())
@@ -89,6 +92,7 @@ fn a_failed_command_is_reported_with_both_streams() {
 }
 
 /// `text` without the ANSI colour codes `tmkms` writes even when not on a terminal
+#[cfg(any(feature = "softsign", feature = "yubihsm"))]
 pub fn without_colour_codes(text: &str) -> String {
     let mut plain = String::new();
     let mut chars = text.chars();
