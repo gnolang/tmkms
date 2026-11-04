@@ -172,9 +172,17 @@ impl ImportCommand {
             })
             .priv_key;
 
+        // `PrivValidatorKey` also accepts secp256k1, so this is reachable with a
+        // legitimate key file
         let seed = match private_key {
             PrivateKey::Ed25519(pk) => pk,
-            _ => unreachable!(),
+            _ => {
+                status_err!(
+                    "unsupported key type in `{}`: an Ed25519 consensus key is required",
+                    self.path.display()
+                );
+                process::exit(1);
+            }
         };
 
         let label = object::Label::from(self.label.as_ref().map(|l| l.as_ref()).unwrap_or(""));
