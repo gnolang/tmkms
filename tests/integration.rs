@@ -8,7 +8,11 @@ use std::{
     fs,
     io::{self, Cursor, Write},
     net::{TcpListener, TcpStream},
-    os::unix::net::{UnixListener, UnixStream},
+    os::unix::{
+        fs::PermissionsExt,
+        net::{UnixListener, UnixStream},
+    },
+    path::Path,
     process::{Child, Command},
 };
 use tempfile::{NamedTempFile, TempDir};
@@ -30,6 +34,9 @@ const KMS_EXE_PATH: &str = "target/debug/tmkms";
 /// Path to the example validator signing key
 const SIGNING_ED25519_KEY_PATH: &str = "tests/support/signing_ed25519.key";
 const SIGNING_SECP256K1_KEY_PATH: &str = "tests/support/signing_secp256k1.key";
+
+/// Path to the KMS's identity key for the secret connection
+const SECRET_CONNECTION_KEY_PATH: &str = "tests/support/secret_connection.key";
 
 enum KmsSocket {
     /// TCP socket type
@@ -133,6 +140,8 @@ impl KmsProcess {
         let pub_key = test_ed25519_signing_keypair().verifying_key();
         let peer_id = PublicKey::from(pub_key).peer_id();
         let state_path = state_dir.path().join("state.json").display().to_string();
+        let secret_key = owner_only_copy(SECRET_CONNECTION_KEY_PATH, state_dir);
+        let signing_key = owner_only_copy(signing_key_path(key_type), state_dir);
 
         writeln!(
             config_file,
@@ -143,19 +152,18 @@ impl KmsProcess {
             state_file = "{state_path}"
 
             [[validator]]
-            addr = "tcp://{}@127.0.0.1:{}"
+            addr = "tcp://{peer_id}@127.0.0.1:{port}"
             chain_id = "test_chain_id"
             max_height = "500000"
             reconnect = false
-            secret_key = "tests/support/secret_connection.key"
+            secret_key = "{secret_key}"
 
             [[providers.softsign]]
             chain_ids = ["test_chain_id"]
             key_format = "base64"
-            path = "{}"
-            key_type = "{}"
-        "#,
-            &peer_id.to_string(), port, signing_key_path(key_type), key_type
+            path = "{signing_key}"
+            key_type = "{key_type}"
+        "#
         ).unwrap();
 
         config_file
@@ -168,7 +176,7 @@ impl KmsProcess {
         state_dir: &TempDir,
     ) -> NamedTempFile {
         let mut config_file = NamedTempFile::new().unwrap();
-        let key_path = signing_key_path(key_type);
+        let key_path = owner_only_copy(signing_key_path(key_type), state_dir);
         let state_path = state_dir.path().join("state.json").display().to_string();
         writeln!(
             config_file,
@@ -298,6 +306,55 @@ fn signing_key_path(key_type: &KeyType) -> &'static str {
     match key_type {
         KeyType::Account => SIGNING_SECP256K1_KEY_PATH,
         KeyType::Consensus => SIGNING_ED25519_KEY_PATH,
+    }
+}
+
+/// Copy a key fixture into `dir` as a file only its owner can read, the way a real
+/// deployment keeps it, and return the copy's path
+fn owner_only_copy(fixture: &str, dir: &TempDir) -> String {
+    let path = dir.path().join(Path::new(fixture).file_name().unwrap());
+    fs::copy(fixture, &path).unwrap();
+    fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).unwrap();
+    path.display().to_string()
+}
+
+/// The KMS warns about any key file others can read, and git stores the committed
+/// fixtures as 0644, so every config the harness writes must point at owner-only
+/// copies instead
+#[test]
+fn generated_configs_point_at_owner_only_key_files() {
+    let dir = tempfile::tempdir().unwrap();
+
+    for key_type in [KeyType::Account, KeyType::Consensus] {
+        let configs = [
+            KmsProcess::create_tcp_config(60000, &key_type, &dir),
+            KmsProcess::create_unix_config("/tmp/tmkms-unused.sock", &key_type, &dir),
+        ];
+
+        for config in configs {
+            let config: toml::Table =
+                toml::from_str(&fs::read_to_string(config.path()).unwrap()).unwrap();
+            let secret_keys = config["validator"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter_map(|validator| validator.get("secret_key"));
+            let signing_keys = config["providers"]["softsign"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|provider| &provider["path"]);
+
+            for path in secret_keys.chain(signing_keys) {
+                let path = path.as_str().unwrap();
+                let mode = fs::metadata(path).unwrap().permissions().mode() & 0o777;
+                assert_eq!(
+                    mode & 0o077,
+                    0,
+                    "{path} is readable by others (mode {mode:04o})"
+                );
+            }
+        }
     }
 }
 
