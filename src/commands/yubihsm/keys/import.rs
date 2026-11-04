@@ -1,7 +1,7 @@
 //! Import keys either from encrypted backups or existing plaintext keys
 
 use super::{DEFAULT_DOMAINS, DEFAULT_WRAP_KEY};
-use crate::{keyring::ed25519, prelude::*};
+use crate::{key_utils, keyring::ed25519, prelude::*};
 use abscissa_core::Command;
 use clap::Parser;
 use cometbft::{PrivateKey, PublicKey};
@@ -182,11 +182,8 @@ impl ImportCommand {
     fn import_base64(&self, hsm: &Client, base64_data: &str) -> Result<(), String> {
         let key_id = self.ed25519_key_id()?;
 
-        // TODO(tarcieri): constant-time string trimming
-        let key_bytes = Zeroizing::new(
-            base64::decode(base64_data.trim_end())
-                .map_err(|e| format!("can't decode Ed25519 key: {e}"))?,
-        );
+        let key_bytes = key_utils::decode_base64_secret(base64_data)
+            .map_err(|e| format!("can't decode Ed25519 key: {e}"))?;
 
         let secret = ed25519::SigningKey::try_from(key_bytes.as_ref())
             .map_err(|e| format!("invalid Ed25519 key: {e}"))?;
