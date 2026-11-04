@@ -10,7 +10,7 @@ use hkdf::Hkdf;
 use sha2::Sha512;
 use std::{
     fs::File,
-    io::{self, Write},
+    io::{self, BufRead, Write},
     path::PathBuf,
     process::exit,
 };
@@ -66,11 +66,55 @@ pub struct SetupCommand {
     pub write_report: Option<PathBuf>,
 }
 
+/// Why setup stopped before reinitializing the HSM
+#[derive(Debug)]
+enum Stop {
+    /// The mnemonic typed in to restore couldn't be decoded
+    UndecodableMnemonic,
+
+    /// The operator didn't confirm erasing the HSM
+    EraseNotConfirmed,
+
+    /// The HSM failed a command
+    Hsm(String),
+}
+
+impl Stop {
+    /// Stop because the HSM failed a command
+    fn hsm(e: impl std::error::Error) -> Self {
+        Stop::Hsm(e.to_string())
+    }
+}
+
 impl Runnable for SetupCommand {
     /// Perform initial YubiHSM dervice provisioning
     fn run(&self) {
+        // Exit only here, once `setup` has returned and dropped every secret it derived:
+        // `process::exit` runs no destructors, so nothing would wipe them
+        match self.setup() {
+            Ok(()) => (),
+            Err(Stop::UndecodableMnemonic) => {
+                eprintln!("*** ERROR: Couldn't decode mnemonic");
+                exit(1);
+            }
+            Err(Stop::EraseNotConfirmed) => {
+                println!("Aborting");
+                exit(1);
+            }
+            Err(Stop::Hsm(e)) => {
+                status_err!("HSM error: {}", e);
+                exit(1);
+            }
+        }
+    }
+}
+
+impl SetupCommand {
+    /// Derive the admin mnemonic and every key from it, print them, and unless only
+    /// printing, erase and reinitialize the HSM with them
+    fn setup(&self) -> Result<(), Stop> {
         let hsm_connector = crate::yubihsm::connector();
-        let hsm_serial_number = get_hsm_client(hsm_connector)
+        let hsm_serial_number = get_hsm_client(hsm_connector)?
             .device_info()
             .expect("error getting device info")
             .serial_number;
@@ -79,9 +123,12 @@ impl Runnable for SetupCommand {
             println!("Restoring and reprovisioning YubiHSM from existing 24-word mnemonic phrase.");
             println!();
 
-            read_mnemonic_from_stdin("*** Enter mnemonic (separate words with spaces): ")
+            read_mnemonic(
+                &mut io::stdin().lock(),
+                "*** Enter mnemonic (separate words with spaces): ",
+            )?
         } else {
-            generate_mnemonic_from_hsm_and_os_csprngs(hsm_connector)
+            generate_mnemonic_from_hsm_and_os_csprngs(hsm_connector)?
         };
 
         let roles = derive_roles_from_mnemonic(&mnemonic);
@@ -142,17 +189,22 @@ impl Runnable for SetupCommand {
         println!("- wrapkey 0x0001 [primary]:   {}", wrapkey_hex.as_str());
 
         if self.print_only {
-            exit(0);
+            return Ok(());
         }
 
-        prompt_for_user_approval("Are you SURE you want erase and reinitialize this HSM?");
+        if !erase_confirmed(
+            &mut io::stdin().lock(),
+            "Are you SURE you want erase and reinitialize this HSM?",
+        ) {
+            return Err(Stop::EraseNotConfirmed);
+        }
 
         let report = yubihsm::setup::erase_device_and_init_with_profile(
             hsm_connector.clone(),
             crate::yubihsm::config().auth.credentials(),
             profile,
         )
-        .unwrap_or_else(|e| hsm_error(&e));
+        .map_err(Stop::hsm)?;
 
         status_ok!(
             "Success",
@@ -177,16 +229,18 @@ impl Runnable for SetupCommand {
                     panic!("error writing report: {e}");
                 })
         }
+
+        Ok(())
     }
 }
 
-/// Read the mnemonic phrase from STDIN
-fn read_mnemonic_from_stdin(prompt: &str) -> mnemonic::Phrase {
+/// Read the mnemonic phrase from `input`, after printing `prompt`
+fn read_mnemonic(input: &mut impl BufRead, prompt: &str) -> Result<mnemonic::Phrase, Stop> {
     print!("{prompt}");
     io::stdout().flush().unwrap();
 
     let mut input_string = String::new();
-    io::stdin()
+    input
         .read_line(&mut input_string)
         .expect("error reading mnemonic from STDIN!");
 
@@ -194,14 +248,12 @@ fn read_mnemonic_from_stdin(prompt: &str) -> mnemonic::Phrase {
     let input_phrase = input_words.join(" ");
     input_string.zeroize();
 
-    let result = mnemonic::Phrase::new(input_phrase, BIP39_LANGUAGE).unwrap_or_else(|_| {
-        eprintln!("*** ERROR: Couldn't decode mnemonic");
-        exit(1);
-    });
+    let result = mnemonic::Phrase::new(input_phrase, BIP39_LANGUAGE)
+        .map_err(|_| Stop::UndecodableMnemonic)?;
 
     println!("\nMnemonic phrase decoded/checksummed successfully!\n");
 
-    result
+    Ok(result)
 }
 
 /// Display the mnemonic as two groups of 12 words
@@ -221,13 +273,13 @@ fn print_mnemonic(mnemonic: &mnemonic::Phrase) {
 /// We need to create our own client here since the global one maintains
 /// a persistent connection, and we need to close this one before we can
 /// reprovision the HSM
-fn get_hsm_client(hsm_connector: &Connector) -> yubihsm::Client {
+fn get_hsm_client(hsm_connector: &Connector) -> Result<yubihsm::Client, Stop> {
     yubihsm::Client::open(
         hsm_connector.clone(),
         crate::yubihsm::config().auth.credentials(),
         false,
     )
-    .unwrap_or_else(|e| hsm_error(&e))
+    .map_err(Stop::hsm)
 }
 
 /// Generate entropy by combining entropy both from the host OS and from the
@@ -237,13 +289,13 @@ fn get_hsm_client(hsm_connector: &Connector) -> yubihsm::Client {
 /// function (HKDF) in order to derive the recovery passphrase, which ideally
 /// ensures that the passphrase will be securely random so long as at least
 /// one of the two inputs is secure.
-fn generate_mnemonic_from_hsm_and_os_csprngs(hsm_connector: &Connector) -> mnemonic::Phrase {
-    let hsm_client = get_hsm_client(hsm_connector);
+fn generate_mnemonic_from_hsm_and_os_csprngs(
+    hsm_connector: &Connector,
+) -> Result<mnemonic::Phrase, Stop> {
+    let hsm_client = get_hsm_client(hsm_connector)?;
 
     // Obtain half of the IKM from the YubiHSM (256-bits)
-    let mut ikm = hsm_client
-        .get_pseudo_random(KEY_SIZE)
-        .unwrap_or_else(|e| hsm_error(&e));
+    let mut ikm = hsm_client.get_pseudo_random(KEY_SIZE).map_err(Stop::hsm)?;
 
     // Obtain another half of the IKM from the host OS (256-bits)
     // for a total of 512-bits IKM. This ensures we still get 256-bits
@@ -261,7 +313,7 @@ fn generate_mnemonic_from_hsm_and_os_csprngs(hsm_connector: &Connector) -> mnemo
     let result = mnemonic::Phrase::from_entropy(okm, BIP39_LANGUAGE);
     okm.zeroize();
 
-    result
+    Ok(result)
 }
 
 /// Derive the default roles form the given BIP39 `mnemonic::Phrase`
@@ -470,30 +522,18 @@ fn create_object_label(label_prefix: &str) -> object::Label {
     object::Label::from([label_prefix, &timestamp].join(":").as_ref())
 }
 
-/// Prompt the user to ensure they want to proceed
-fn prompt_for_user_approval(prompt: &str) {
+/// Ask, after printing `prompt`, whether to proceed, and read the answer from `input`
+fn erase_confirmed(input: &mut impl BufRead, prompt: &str) -> bool {
     print!("\n*** {prompt} (y/N): ");
     io::stdout().flush().unwrap();
 
     let mut choice_in = String::new();
-    io::stdin()
+    input
         .read_line(&mut choice_in)
         .expect("Failed to read user input");
 
     let choice = choice_in.trim();
-
-    if choice != "y" && choice != "Y" {
-        println!("Aborting");
-        exit(1);
-    }
-}
-
-/// Handler for HSM errors
-fn hsm_error(e: &dyn std::error::Error) -> ! {
-    status_err!("HSM error: {}", e);
-
-    // TODO: handle exits via abscissa
-    exit(1);
+    choice == "y" || choice == "Y"
 }
 
 #[cfg(test)]
@@ -513,6 +553,41 @@ mod tests {
     /// Test vector `mnemonic::Phrase`
     fn test_mnemonic() -> mnemonic::Phrase {
         mnemonic::Phrase::from_entropy(TEST_KEY, BIP39_LANGUAGE)
+    }
+
+    /// `process::exit` runs no destructors, so a mnemonic that can't be decoded must come
+    /// back to `run`, which exits only once every secret has been dropped
+    #[test]
+    fn an_undecodable_mnemonic_comes_back_to_run() {
+        assert!(matches!(
+            read_mnemonic(&mut "not a mnemonic\n".as_bytes(), "mnemonic: "),
+            Err(Stop::UndecodableMnemonic)
+        ));
+    }
+
+    #[test]
+    fn a_typed_mnemonic_is_decoded() {
+        let typed = format!("{TEST_BIP39_PHRASE}\n");
+        let mnemonic = read_mnemonic(&mut typed.as_bytes(), "mnemonic: ").unwrap();
+        assert_eq!(mnemonic.entropy(), &TEST_KEY);
+    }
+
+    /// Declining comes back to `run` for the same reason: the caller holds every secret
+    #[test]
+    fn only_y_confirms_the_erase() {
+        for (answer, confirmed) in [
+            ("y\n", true),
+            ("Y\n", true),
+            ("n\n", false),
+            ("\n", false),
+            ("yes\n", false),
+        ] {
+            assert_eq!(
+                erase_confirmed(&mut answer.as_bytes(), "erase?"),
+                confirmed,
+                "{answer:?}"
+            );
+        }
     }
 
     #[test]
