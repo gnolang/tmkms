@@ -44,4 +44,8 @@ fn keys_import_rejects_a_secp256k1_priv_validator() {
         message.contains("Ed25519 consensus key is required"),
         "{message}"
     );
+    assert!(
+        message.contains(super::SECP256K1_PRIV_VALIDATOR_PATH),
+        "{message}"
+    );
 }
