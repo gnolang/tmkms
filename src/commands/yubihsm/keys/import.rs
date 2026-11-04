@@ -44,6 +44,10 @@ const NO_KEY_ID: &str =
 
 impl Runnable for ImportCommand {
     fn run(&self) {
+        // The first connection to the HSM ends the process when it fails, and later uses
+        // reuse it, so connect before any secret is in memory
+        drop(crate::yubihsm::client());
+
         // Exit only here, once `import` has returned and dropped every secret it held:
         // `process::exit` runs no destructors, so nothing would wipe them
         if let Err(message) = self.import() {

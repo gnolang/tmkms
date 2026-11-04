@@ -214,3 +214,37 @@ fn keys_import_rejects_a_secp256k1_priv_validator() {
         "{message}"
     );
 }
+
+/// Connecting to the HSM ends the process when it fails, and nothing wipes what is in
+/// memory then, so the import connects before it reads the key file
+#[test]
+fn keys_import_connects_before_reading_the_key_file() {
+    let dir = tempfile::tempdir().unwrap();
+    let config_without_hsm = key_file(&dir, "tmkms.toml", "[providers]\n");
+    let missing_key = dir.path().join("missing").display().to_string();
+
+    let out = cli::run([
+        "yubihsm",
+        "keys",
+        "import",
+        "-c",
+        &config_without_hsm,
+        "-t",
+        "base64",
+        "-i",
+        "1",
+        &missing_key,
+    ]);
+
+    assert_eq!(str::from_utf8(&out.stdout).unwrap(), "");
+    assert_eq!(
+        (
+            out.status.code(),
+            without_colour_codes(str::from_utf8(&out.stderr).unwrap())
+        ),
+        (
+            Some(1),
+            "error: expected one [[providers.yubihsm]] in config, found: 0\n".to_owned()
+        )
+    );
+}
