@@ -43,7 +43,7 @@ liveness/DoS > hygiene.
 | 11  | `tmkms init` will not destroy an existing identity key without `-f`            | **Medium** | Data loss           |
 | 12  | Disk failures are no longer reported as "attempted double sign"                | **Low**    | Observability       |
 | 13  | Bounded TCP connect, Unix-socket timeouts, no peer payloads in logs            | **Low**    | Liveness/DoS        |
-| 14  | Zeroization gaps closed in key load, keygen, `yubihsm keys import` (see below) | **Low**    | Hygiene             |
+| 14  | Zeroization gaps closed in key load, keygen, key import and setup (see below)  | **Low**    | Hygiene             |
 | 15  | Dependencies refreshed, CI hardened, dev image off EOL centos:7                | **Low**    | Supply chain        |
 | 16  | `tmkms ledger init` can succeed at all, and honours the double-sign check      | **Low**    | Upstream bug (dead) |
 | 17  | A `gno` key format prints the public key gno.land accepts                      | **Low**    | gno.land addition   |
@@ -184,8 +184,7 @@ Signing is unaffected either way.
   `fortanixdsm` feature, which the release image does not build, and even there the
   Fortanix DSM client speaks HTTP/1.1, so it never runs. The fix needs hyper 1, which
   `sdkms` does not use.
-- **Key copies held inside two dependencies are not wiped (#14).** tmkms cannot
-  reach them:
+- **Some key copies are out of tmkms's reach, and not wiped (#14):**
   - `iq-cometbft` parses every `priv_validator_key.json`, and its Ed25519 key type is
     a plain byte array that never wipes itself and cannot be wiped from outside. Each
     parse leaves the seed in freed memory: `yubihsm keys import`, `softsign import`,
@@ -194,9 +193,11 @@ Signing is unaffected either way.
     wiped either, whatever the key type.
   - `yubihsm` copies a key into command buffers it frees without wiping, which
     upstream marks as a TODO. So every key `yubihsm keys import` stores, Base64 or
-    JSON, leaves copies in freed memory.
+    JSON, and every key `yubihsm setup` installs leave copies in freed memory.
+  - A mnemonic typed into `yubihsm setup --restore` stays in the standard library's
+    stdin buffer, which nothing can wipe.
 
-  Revisit when these crates wipe their key buffers.
+  Revisit the first two when these crates wipe their key buffers.
 - **The container runs as root**, matching the previously published image, because
   key and state files arrive on a host-mounted volume whose ownership is managed
   outside the image.
