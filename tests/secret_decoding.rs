@@ -47,7 +47,8 @@ unsafe impl GlobalAlloc for SeedScanner {
 #[global_allocator]
 static ALLOCATOR: SeedScanner = SeedScanner;
 
-/// One test, because the allocator's record is shared by everything in this process
+/// One test, because the allocator's record is shared by everything in this process.
+/// It covers both readers of a Base64 key: key load and `yubihsm keys import`.
 #[test]
 fn a_base64_key_leaves_no_decoded_bytes_in_freed_memory() {
     let dir = tempfile::tempdir().unwrap();
@@ -71,4 +72,32 @@ fn a_base64_key_leaves_no_decoded_bytes_in_freed_memory() {
         !FREED_SEED.load(Ordering::SeqCst),
         "a key that fails to decode left its bytes in freed memory"
     );
+
+    #[cfg(feature = "yubihsm-mock")]
+    {
+        use tmkms::commands::yubihsm::keys::import::ImportCommand;
+        use yubihsm::{Client, Connector, Credentials};
+
+        // The key fails to decode before the HSM is reached, so its password is moot
+        let hsm = Client::create(
+            Connector::mockhsm(),
+            Credentials::from_password(1, b"wrong"),
+        )
+        .unwrap();
+        let import = ImportCommand {
+            key_id: Some(1),
+            key_type: Some("base64".to_owned()),
+            path: misencoded_key,
+            ..Default::default()
+        };
+
+        assert_eq!(
+            import.import(&hsm),
+            Err("can't decode Ed25519 key: bad encoding".to_owned())
+        );
+        assert!(
+            !FREED_SEED.load(Ordering::SeqCst),
+            "yubihsm keys import left a key that fails to decode in freed memory"
+        );
+    }
 }

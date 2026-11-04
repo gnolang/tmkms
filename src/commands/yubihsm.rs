@@ -1,7 +1,7 @@
 //! `tmkms yubihsm` CLI (sub)commands
 
 mod detect;
-mod keys;
+pub mod keys;
 mod setup;
 mod test;
 

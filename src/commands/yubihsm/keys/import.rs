@@ -59,7 +59,7 @@ impl Runnable for ImportCommand {
 
 impl ImportCommand {
     /// Import the key file, returning what went wrong as the message the operator reads
-    fn import(&self, hsm: &Client) -> Result<(), String> {
+    pub fn import(&self, hsm: &Client) -> Result<(), String> {
         // The file holds key material, so wipe the buffer when this scope ends
         let contents = Zeroizing::new(
             fs::read_to_string(&self.path)
