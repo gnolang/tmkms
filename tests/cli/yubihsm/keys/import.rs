@@ -38,24 +38,7 @@ fn run_writing_only_stderr(args: &[&str]) -> (Option<i32>, String) {
     );
 
     let stderr = str::from_utf8(&out.stderr).unwrap();
-    (out.status.code(), without_colour_codes(stderr))
-}
-
-/// `text` without the ANSI colour codes `tmkms` writes even when not on a terminal
-fn without_colour_codes(text: &str) -> String {
-    let mut plain = String::new();
-    let mut chars = text.chars();
-
-    while let Some(c) = chars.next() {
-        if c == '\u{1b}' {
-            // A colour code runs from the escape character to the next `m`
-            chars.by_ref().find(|&c| c == 'm');
-        } else {
-            plain.push(c);
-        }
-    }
-
-    plain
+    (out.status.code(), cli::without_colour_codes(stderr))
 }
 
 /// Write `contents` to a file named `name` in `dir` and return its path
