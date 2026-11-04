@@ -18,3 +18,5 @@ pub const SECP256K1_PRIV_VALIDATOR_PATH: &str = "tests/support/priv_validator_se
 mod detect;
 mod help;
 mod keys;
+#[cfg(feature = "yubihsm-mock")]
+mod setup;

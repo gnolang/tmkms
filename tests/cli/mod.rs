@@ -2,7 +2,8 @@
 
 use std::{
     ffi::OsStr,
-    process::{Command, Output},
+    io::Write,
+    process::{Command, Output, Stdio},
 };
 
 use super::KMS_EXE_PATH;
@@ -22,6 +23,30 @@ where
     S: AsRef<OsStr>,
 {
     Command::new(KMS_EXE_PATH).args(args).output().unwrap()
+}
+
+/// Run the `tmkms` CLI command with the given arguments, typing `stdin` into it
+pub fn run_with_stdin<I, S>(args: I, stdin: &str) -> Output
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<OsStr>,
+{
+    let mut child = Command::new(KMS_EXE_PATH)
+        .args(args)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+
+    // Dropping the handle closes stdin, as an operator ending the input would
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(stdin.as_bytes())
+        .unwrap();
+    child.wait_with_output().unwrap()
 }
 
 /// Run the `tmkms` CLI command with the expectation that it will exit successfully,
