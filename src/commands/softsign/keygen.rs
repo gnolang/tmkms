@@ -1,6 +1,6 @@
 //! `tmkms softsign keygen` subcommand
 
-use crate::{key_utils, prelude::*};
+use crate::{error::Error, key_utils, prelude::*};
 use abscissa_core::Command;
 use clap::Parser;
 use k256::ecdsa;
@@ -32,7 +32,7 @@ impl Runnable for KeygenCommand {
 
         let output_path = &self.output_paths[0];
 
-        match self
+        let generated = match self
             .key_type
             .as_ref()
             .map(AsRef::as_ref)
@@ -47,30 +47,35 @@ impl Runnable for KeygenCommand {
                 );
                 process::exit(1);
             }
+        };
+
+        // Exit only here, once the generator has returned and dropped the key:
+        // `process::exit` runs no destructors, so nothing would wipe it
+        if let Err(e) = generated {
+            status_err!("{}", e);
+            process::exit(1);
         }
     }
 }
 
 /// Randomly generate a Base64-encoded secp256k1 key and store it at the given path
-fn generate_secp256k1_key(output_path: &Path) {
+fn generate_secp256k1_key(output_path: &Path) -> Result<(), Error> {
     let signing_key = ecdsa::SigningKey::random(&mut OsRng);
     // `to_bytes` hands back a copy of the private scalar
     let secret_bytes = Zeroizing::new(signing_key.to_bytes());
 
-    key_utils::write_base64_secret(output_path, &secret_bytes).unwrap_or_else(|e| {
-        status_err!("{}", e);
-        process::exit(1);
-    });
+    key_utils::write_base64_secret(output_path, &secret_bytes)?;
 
     status_ok!(
         "Generated",
         "account (secp256k1) private key at: {}",
         output_path.display()
     );
+    Ok(())
 }
 
 /// Randomly generate a Base64-encoded Ed25519 key and store it at the given path
-fn generate_ed25519_key(output_path: &Path) {
+fn generate_ed25519_key(output_path: &Path) -> Result<(), Error> {
     // `Zeroizing` wipes the seed when this scope ends; `SigningKey` zeroizes
     // itself on drop, but the buffer it was built from would otherwise be left
     // in place
@@ -80,14 +85,36 @@ fn generate_ed25519_key(output_path: &Path) {
     // the stack and leave that copy unwiped
     let sk = ed25519_dalek::SigningKey::from_bytes(&sk_bytes);
 
-    key_utils::write_base64_secret(output_path, sk.as_bytes()).unwrap_or_else(|e| {
-        status_err!("{}", e);
-        process::exit(1);
-    });
+    key_utils::write_base64_secret(output_path, sk.as_bytes())?;
 
     status_ok!(
         "Generated",
         "consensus (Ed25519) private key at: {}",
         output_path.display()
     );
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// `process::exit` runs no destructors, so a write failure that ended the process
+    /// where it happened would skip wiping the key just generated. It must come back to
+    /// `run` instead, after the key has been dropped.
+    #[test]
+    fn a_failed_write_comes_back_to_run() {
+        let dir = tempfile::tempdir().unwrap();
+        let unwritable = dir.path().join("missing/key");
+
+        for generate in [generate_secp256k1_key, generate_ed25519_key] {
+            assert_eq!(
+                generate(&unwritable).unwrap_err().to_string(),
+                format!(
+                    "I/O error: couldn't write `{}`: No such file or directory (os error 2)",
+                    unwritable.display()
+                )
+            );
+        }
+    }
 }
