@@ -43,8 +43,9 @@ const SECRET_CONNECTION_KEY_PATH: &str = "tests/support/secret_connection.key";
 /// Name of the KMS's log inside the KMS's directory
 const KMS_LOG_FILE: &str = "kms.log";
 
-/// How long a KMS expected to exit may take before the test fails instead of hanging
-const KMS_EXIT_TIMEOUT: Duration = Duration::from_secs(10);
+/// How long a KMS may take to connect, answer or exit before its test fails instead
+/// of hanging
+const KMS_TIMEOUT: Duration = Duration::from_secs(10);
 
 enum KmsSocket {
     /// TCP socket type
@@ -105,10 +106,15 @@ impl KmsProcess {
 
         // Listen on a random port
         let listener = TcpListener::bind(format!("{}:{}", "127.0.0.1", port)).unwrap();
+        listener.set_nonblocking(true).unwrap();
 
-        let process = KmsProcess::spawn(&config, &kms_dir);
+        let mut process = KmsProcess::spawn(&config, &kms_dir);
 
-        let (socket, _) = listener.accept().unwrap();
+        let socket = wait_for_connection(&mut process, &kms_dir, || {
+            listener.accept().map(|(socket, _)| socket)
+        });
+        socket.set_nonblocking(false).unwrap();
+        socket.set_read_timeout(Some(KMS_TIMEOUT)).unwrap();
         Self {
             process,
             socket: KmsSocket::Tcp(socket),
@@ -118,6 +124,11 @@ impl KmsProcess {
 
     /// Spawn the KMS process and connect to the Unix listener
     pub fn create_unix(key_type: &KeyType) -> Self {
+        Self::create_unix_with(key_type, |_| ())
+    }
+
+    /// Like `create_unix`, with `prepare` changing the KMS's directory before the KMS starts
+    fn create_unix_with(key_type: &KeyType, prepare: impl FnOnce(&Path)) -> Self {
         // Create a random socket path and a config file
         let mut rng = rand::thread_rng();
         let letter: char = rng.gen_range(b'a'..=b'z') as char;
@@ -125,14 +136,20 @@ impl KmsProcess {
         let socket_path = format!("/tmp/tmkms-{letter}{number:06}.sock");
         let kms_dir = tempfile::tempdir().unwrap();
         let config = KmsProcess::create_unix_config(&socket_path, key_type, &kms_dir);
+        prepare(kms_dir.path());
 
         // Start listening for connections via the Unix socket
         let listener = UnixListener::bind(socket_path).unwrap();
+        listener.set_nonblocking(true).unwrap();
 
         // Fire up the KMS process and allow it to connect to our Unix socket
-        let process = KmsProcess::spawn(&config, &kms_dir);
+        let mut process = KmsProcess::spawn(&config, &kms_dir);
 
-        let (socket, _) = listener.accept().unwrap();
+        let socket = wait_for_connection(&mut process, &kms_dir, || {
+            listener.accept().map(|(socket, _)| socket)
+        });
+        socket.set_nonblocking(false).unwrap();
+        socket.set_read_timeout(Some(KMS_TIMEOUT)).unwrap();
         Self {
             process,
             socket: KmsSocket::Unix(socket),
@@ -156,19 +173,19 @@ impl KmsProcess {
 
     /// Everything the KMS has logged so far
     fn log(&self) -> String {
-        fs::read_to_string(self.kms_dir.path().join(KMS_LOG_FILE)).unwrap()
+        kms_log(&self.kms_dir)
     }
 
     /// Wait for the KMS to exit on its own, and return how it exited
     fn wait_for_exit(&mut self) -> ExitStatus {
-        let deadline = Instant::now() + KMS_EXIT_TIMEOUT;
+        let deadline = Instant::now() + KMS_TIMEOUT;
         loop {
             if let Some(status) = self.process.try_wait().unwrap() {
                 return status;
             }
             assert!(
                 Instant::now() < deadline,
-                "KMS still running after {KMS_EXIT_TIMEOUT:?}"
+                "KMS still running after {KMS_TIMEOUT:?}"
             );
             thread::sleep(Duration::from_millis(10));
         }
@@ -275,6 +292,56 @@ impl KmsProcess {
     }
 }
 
+impl Drop for KmsProcess {
+    fn drop(&mut self) {
+        self.process.kill().unwrap();
+        self.process.wait().unwrap();
+
+        // The test harness prints this with the failure, so a failing test shows what
+        // its KMS logged
+        if thread::panicking() {
+            eprintln!("--- {KMS_LOG_FILE} ---\n{}", self.log());
+        }
+    }
+}
+
+/// Everything the KMS keeping its files in `kms_dir` has logged so far
+fn kms_log(kms_dir: &TempDir) -> String {
+    fs::read_to_string(kms_dir.path().join(KMS_LOG_FILE)).unwrap()
+}
+
+/// Wait for the KMS to connect, polling `accept` on a non-blocking listener. A KMS that
+/// exits first, or doesn't connect within `KMS_TIMEOUT`, fails the test with its log.
+fn wait_for_connection<S>(
+    process: &mut Child,
+    kms_dir: &TempDir,
+    mut accept: impl FnMut() -> io::Result<S>,
+) -> S {
+    let deadline = Instant::now() + KMS_TIMEOUT;
+
+    loop {
+        match accept() {
+            Ok(socket) => return socket,
+            Err(e) if e.kind() == io::ErrorKind::WouldBlock => (),
+            Err(e) => panic!("couldn't accept the KMS's connection: {e}"),
+        }
+
+        let failure = match process.try_wait().unwrap() {
+            Some(status) => format!("KMS exited ({status}) before connecting"),
+            None if Instant::now() < deadline => {
+                thread::sleep(Duration::from_millis(10));
+                continue;
+            }
+            None => {
+                process.kill().unwrap();
+                process.wait().unwrap();
+                format!("KMS didn't connect within {KMS_TIMEOUT:?}")
+            }
+        };
+        panic!("{failure}\n--- {KMS_LOG_FILE} ---\n{}", kms_log(kms_dir));
+    }
+}
+
 /// A struct to hold protocol integration tests contexts
 struct ProtocolTester {
     tcp_device: KmsProcess,
@@ -316,9 +383,6 @@ impl ProtocolTester {
 
 impl Drop for ProtocolTester {
     fn drop(&mut self) {
-        self.tcp_device.process.kill().unwrap();
-        self.unix_device.process.kill().unwrap();
-
         match fs::remove_file("test_chain_id_priv_validator_state.json") {
             Err(ref e) if e.kind() != io::ErrorKind::NotFound => {
                 panic!("{}", e);
@@ -384,6 +448,16 @@ fn owner_only_copy(fixture: &str, dir: &TempDir) -> String {
     fs::copy(fixture, &path).unwrap();
     fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).unwrap();
     path.display().to_string()
+}
+
+/// A KMS that dies before connecting fails its test with the KMS's own error, rather
+/// than leaving the test waiting for a connection that never comes
+#[test]
+#[should_panic(expected = "couldn't read key from")]
+fn a_kms_that_dies_before_connecting_fails_its_test_with_its_log() {
+    KmsProcess::create_unix_with(&KeyType::Consensus, |kms_dir| {
+        fs::remove_file(kms_dir.join("signing_ed25519.key")).unwrap();
+    });
 }
 
 /// A KMS that finds no state file warns that double-sign protection has no history,
@@ -680,16 +754,11 @@ fn exceed_max_height(key_type: KeyType) {
         let response = connection.read_msg();
         assert!(response.is_err(), "KMS answered: {response:?}");
 
-        let status = kms.wait_for_exit();
-        let log = kms.log();
-        assert_eq!(status.code(), Some(1), "{log}");
-        assert!(
-            log.contains(
-                "requested signature above stop height: \
-                 attempted to sign at height 500001 which is greater than 500000"
-            ),
-            "{log}"
-        );
+        assert_eq!(kms.wait_for_exit().code(), Some(1));
+        assert!(kms.log().contains(
+            "requested signature above stop height: \
+             attempted to sign at height 500001 which is greater than 500000"
+        ));
     }
 }
 
