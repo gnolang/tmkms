@@ -175,8 +175,9 @@ Signing is unaffected either way.
 - **`RUSTSEC-2026-0387` (`crypto-bigint`) stays ignored**, and it ships in the release
   image. Its installable fix needs Rust 1.87, above the 1.85 MSRV, and
   `elliptic-curve` 0.14, which neither this crate nor `iq-cometbft` nor `yubihsm` has
-  moved to. A secp256k1 secret passes through it whenever softsign or
-  `yubihsm keys import` builds an account key in-process; Ed25519 consensus keys and
+  moved to. A secp256k1 secret passes through it whenever softsign generates, imports,
+  loads or signs with an account key, and when `yubihsm keys import` parses one;
+  signing is the path a remote peer can trigger repeatedly. Ed25519 consensus keys and
   keys held in a YubiHSM or Ledger are unaffected. Revisit when the MSRV reaches 1.87
   and those crates have moved.
 - **`RUSTSEC-2026-0258` (`h2`) stays ignored.** It is compiled only with the
