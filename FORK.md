@@ -192,8 +192,8 @@ Signing is unaffected either way.
 
 - `cargo fmt --all -- --check` — clean.
 - `cargo clippy --all-features --all-targets` — clean.
-- `cargo test --all-features -- --test-threads 1` — 68 unit + 24 integration tests
-  pass (10 ignored, all hardware-dependent).
+- `cargo test --all-features -- --test-threads 1` — 68 unit + 27 integration tests
+  pass (10 ignored, all hardware-dependent), printing nothing but their results.
 - The published image is pulled and checked on every release: it reports its own
   version, keeps `tmkms` as the entrypoint, and links the USB libraries the
   `yubihsm`/`ledger` backends need.
