@@ -40,7 +40,7 @@ const SIGNING_SECP256K1_KEY_PATH: &str = "tests/support/signing_secp256k1.key";
 /// Path to the KMS's identity key for the secret connection
 const SECRET_CONNECTION_KEY_PATH: &str = "tests/support/secret_connection.key";
 
-/// Name of a captured KMS log inside the KMS's state directory
+/// Name of a captured KMS log inside the KMS's directory
 const KMS_LOG_FILE: &str = "kms.log";
 
 /// How long a KMS expected to exit may take before the test fails instead of hanging
@@ -102,7 +102,7 @@ struct KmsProcess {
 
     /// Directory holding this process's keys, double-sign protection state file and
     /// captured log, kept alive (and cleaned up) for the lifetime of the process
-    state_dir: TempDir,
+    kms_dir: TempDir,
 }
 
 impl KmsProcess {
@@ -110,19 +110,19 @@ impl KmsProcess {
     pub fn create_tcp(key_type: &KeyType, log: KmsLog) -> Self {
         // Generate a random port and a config file
         let port: u16 = rand::thread_rng().gen_range(60000..=65535);
-        let state_dir = tempfile::tempdir().unwrap();
-        let config = KmsProcess::create_tcp_config(port, key_type, &state_dir);
+        let kms_dir = tempfile::tempdir().unwrap();
+        let config = KmsProcess::create_tcp_config(port, key_type, &kms_dir);
 
         // Listen on a random port
         let listener = TcpListener::bind(format!("{}:{}", "127.0.0.1", port)).unwrap();
 
-        let process = KmsProcess::spawn(&config, log, &state_dir);
+        let process = KmsProcess::spawn(&config, log, &kms_dir);
 
         let (socket, _) = listener.accept().unwrap();
         Self {
             process,
             socket: KmsSocket::Tcp(socket),
-            state_dir,
+            kms_dir,
         }
     }
 
@@ -133,32 +133,32 @@ impl KmsProcess {
         let letter: char = rng.gen_range(b'a'..=b'z') as char;
         let number: u32 = rng.gen_range(0..=999999);
         let socket_path = format!("/tmp/tmkms-{letter}{number:06}.sock");
-        let state_dir = tempfile::tempdir().unwrap();
-        let config = KmsProcess::create_unix_config(&socket_path, key_type, &state_dir);
+        let kms_dir = tempfile::tempdir().unwrap();
+        let config = KmsProcess::create_unix_config(&socket_path, key_type, &kms_dir);
 
         // Start listening for connections via the Unix socket
         let listener = UnixListener::bind(socket_path).unwrap();
 
         // Fire up the KMS process and allow it to connect to our Unix socket
-        let process = KmsProcess::spawn(&config, log, &state_dir);
+        let process = KmsProcess::spawn(&config, log, &kms_dir);
 
         let (socket, _) = listener.accept().unwrap();
         Self {
             process,
             socket: KmsSocket::Unix(socket),
-            state_dir,
+            kms_dir,
         }
     }
 
     /// Start a KMS on `config`, its log going where `log` says. It logs only warnings
     /// and errors, so a healthy KMS logs nothing.
-    fn spawn(config: &NamedTempFile, log: KmsLog, state_dir: &TempDir) -> Child {
+    fn spawn(config: &NamedTempFile, log: KmsLog, kms_dir: &TempDir) -> Child {
         let mut kms = Command::new(KMS_EXE_PATH);
         kms.args(["start", "-c", config.path().to_str().unwrap()])
             .env("RUST_LOG", "warn");
 
         if let KmsLog::Captured = log {
-            let file = File::create(state_dir.path().join(KMS_LOG_FILE)).unwrap();
+            let file = File::create(kms_dir.path().join(KMS_LOG_FILE)).unwrap();
             kms.stdout(file.try_clone().unwrap()).stderr(file);
         }
 
@@ -179,19 +179,19 @@ impl KmsProcess {
             );
             thread::sleep(Duration::from_millis(10));
         };
-        let log = fs::read_to_string(self.state_dir.path().join(KMS_LOG_FILE))
+        let log = fs::read_to_string(self.kms_dir.path().join(KMS_LOG_FILE))
             .expect("only a KMS spawned with KmsLog::Captured has a log");
         (status, log)
     }
 
     /// Create a config file for a TCP KMS and return its path
-    fn create_tcp_config(port: u16, key_type: &KeyType, state_dir: &TempDir) -> NamedTempFile {
+    fn create_tcp_config(port: u16, key_type: &KeyType, kms_dir: &TempDir) -> NamedTempFile {
         let mut config_file = NamedTempFile::new().unwrap();
         let pub_key = test_ed25519_signing_keypair().verifying_key();
         let peer_id = PublicKey::from(pub_key).peer_id();
-        let state_path = seeded_state_file(state_dir);
-        let secret_key = owner_only_copy(SECRET_CONNECTION_KEY_PATH, state_dir);
-        let signing_key = owner_only_copy(signing_key_path(key_type), state_dir);
+        let state_path = seeded_state_file(kms_dir);
+        let secret_key = owner_only_copy(SECRET_CONNECTION_KEY_PATH, kms_dir);
+        let signing_key = owner_only_copy(signing_key_path(key_type), kms_dir);
 
         writeln!(
             config_file,
@@ -223,11 +223,11 @@ impl KmsProcess {
     fn create_unix_config(
         socket_path: &str,
         key_type: &KeyType,
-        state_dir: &TempDir,
+        kms_dir: &TempDir,
     ) -> NamedTempFile {
         let mut config_file = NamedTempFile::new().unwrap();
-        let key_path = owner_only_copy(signing_key_path(key_type), state_dir);
-        let state_path = seeded_state_file(state_dir);
+        let key_path = owner_only_copy(signing_key_path(key_type), kms_dir);
+        let state_path = seeded_state_file(kms_dir);
         writeln!(
             config_file,
             r#"
