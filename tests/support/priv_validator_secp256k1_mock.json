@@ -1,6 +1,6 @@
 {
   "comment": "TEST KEY ONLY: DO **NOT** USE!! secp256k1, secret = 32 bytes of 0x01",
-  "address": "0000000000000000000000000000000000000000",
+  "address": "79B000887626B294A914501A4CD226B58B235983",
   "pub_key": {
     "type": "tendermint/PubKeySecp256k1",
     "value": "AxuExVZ7EmRAmV0+1aq6BWXXHhg0YEgZ/5wX9enV3QeP"
