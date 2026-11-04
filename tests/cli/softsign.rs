@@ -104,6 +104,10 @@ fn import_reports_every_outcome() {
             "error: config error: invalid key format: raw (must be 'json' or 'raw')\n".into(),
         ),
         (
+            vec!["import", "-f", "base64", ed25519_json, &output],
+            "error: invalid format: Base64 (must be 'json')\n".into(),
+        ),
+        (
             vec!["import", &missing_json, &output],
             format!(
                 "error: couldn't load {missing_json}: StringTracer: failed to open file: \
