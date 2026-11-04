@@ -8,7 +8,7 @@ use crate::{
 use cometbft::block;
 use serde::Deserialize;
 use std::{
-    io::Read,
+    io::{self, Read},
     process::{Command, Stdio},
     sync::mpsc::{self, RecvTimeoutError},
     thread,
@@ -50,14 +50,8 @@ pub fn run(config: &HookConfig) -> Result<Output, Error> {
     thread::Builder::new()
         .name("state-hook-output".to_owned())
         .spawn(move || {
-            let mut output = Vec::new();
-            // One byte past the limit, so that going over it can be told apart
-            let read = stdout
-                .take(MAX_OUTPUT_BYTES + 1)
-                .read_to_end(&mut output)
-                .map(|_| output);
             // Fails only once `run` has stopped waiting, so nobody is left to tell
-            let _ = sender.send(read);
+            let _ = sender.send(read_capped(stdout));
         })?;
 
     let timeout = Duration::from_secs(config.timeout_secs.unwrap_or(DEFAULT_TIMEOUT_SECS));
@@ -105,6 +99,14 @@ pub fn run(config: &HookConfig) -> Result<Output, Error> {
     Ok(serde_json::from_slice(&output)?)
 }
 
+/// Read a hook's output, stopping one byte past the limit: going over it can then
+/// be told apart without holding everything a runaway hook writes
+fn read_capped(output: impl Read) -> io::Result<Vec<u8>> {
+    let mut read = Vec::new();
+    output.take(MAX_OUTPUT_BYTES + 1).read_to_end(&mut read)?;
+    Ok(read)
+}
+
 /// JSON output from the hook command (parsed with serde)
 #[derive(Debug, Deserialize)]
 pub struct Output {
@@ -115,7 +117,10 @@ pub struct Output {
 #[cfg(test)]
 mod tests {
     use crate::{config::chain::HookConfig, error::ErrorKind};
-    use std::time::{Duration, Instant};
+    use std::{
+        io::{self, Read},
+        time::{Duration, Instant},
+    };
 
     /// Build a config for a hook that runs the given shell snippet
     fn shell_hook(script: &str) -> HookConfig {
@@ -162,6 +167,17 @@ mod tests {
 
         assert_eq!(*err.kind(), ErrorKind::HookError);
         assert!(err.to_string().contains("more than"), "{err}");
+    }
+
+    /// The cap is what bounds the signer's memory. Without it the length check
+    /// still rejects an oversized hook, but only after holding all of its output
+    #[test]
+    fn reading_stops_one_byte_past_the_limit() {
+        let source = io::repeat(b' ').take(4 * super::MAX_OUTPUT_BYTES);
+
+        let read = super::read_capped(source).unwrap();
+
+        assert_eq!(read.len() as u64, super::MAX_OUTPUT_BYTES + 1);
     }
 
     /// The timeout bounds the whole run, reading the output included: a process
