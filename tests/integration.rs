@@ -128,8 +128,9 @@ impl KmsProcess {
     /// Like `create_unix`, with `prepare` changing the KMS's directory before the KMS starts
     fn create_unix_with(key_type: &KeyType, prepare: impl FnOnce(&Path)) -> Self {
         // A socket in the KMS's own directory, which nothing else uses and which is
-        // removed with it
-        let kms_dir = tempfile::tempdir().unwrap();
+        // removed with it. The directory is under `/tmp` because a socket path is
+        // limited to about 100 bytes, and `$TMPDIR` can be long.
+        let kms_dir = tempfile::tempdir_in("/tmp").unwrap();
         let socket_path = kms_dir.path().join("kms.sock").display().to_string();
         let config = KmsProcess::create_unix_config(&socket_path, key_type, &kms_dir);
         prepare(kms_dir.path());
