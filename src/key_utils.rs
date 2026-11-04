@@ -13,7 +13,7 @@ use std::{
     os::unix::fs::{OpenOptionsExt, PermissionsExt},
     path::Path,
 };
-use subtle_encoding::base64;
+use subtle_encoding::{Base64, Encoding, base64};
 use zeroize::Zeroizing;
 
 /// File permissions for secret data
@@ -47,6 +47,20 @@ fn warn_if_readable_by_others(path: &Path) {
     }
 }
 
+/// Decode a Base64-encoded secret, ignoring trailing whitespace such as a final
+/// newline. The decoder writes every group before it reports an invalid one, so it
+/// decodes into a buffer that is wiped when dropped, whether or not decoding succeeds.
+pub fn decode_base64_secret(encoded: &str) -> Result<Zeroizing<Vec<u8>>, subtle_encoding::Error> {
+    // TODO(tarcieri): constant-time string trimming
+    let encoded = encoded.trim_end().as_bytes();
+
+    let mut decoded = Zeroizing::new(vec![0u8; Base64::default().decoded_len(encoded)?]);
+    let decoded_len = Base64::default().decode_to_slice(encoded, &mut decoded)?;
+    decoded.truncate(decoded_len);
+
+    Ok(decoded)
+}
+
 /// Load Base64-encoded secret data (i.e. key) from the given path
 pub fn load_base64_secret(path: impl AsRef<Path>) -> Result<Zeroizing<Vec<u8>>, Error> {
     warn_if_readable_by_others(path.as_ref());
@@ -60,17 +74,15 @@ pub fn load_base64_secret(path: impl AsRef<Path>) -> Result<Zeroizing<Vec<u8>>, 
         )
     })?);
 
-    // TODO(tarcieri): constant-time string trimming
-    let data = Zeroizing::new(base64::decode(base64_data.trim_end()).map_err(|e| {
+    decode_base64_secret(&base64_data).map_err(|e| {
         format_err!(
             IoError,
             "can't decode key from `{}`: {}",
             path.as_ref().display(),
             e
         )
-    })?);
-
-    Ok(data)
+        .into()
+    })
 }
 
 /// Load a Base64-encoded Ed25519 secret key
