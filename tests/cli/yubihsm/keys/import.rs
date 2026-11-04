@@ -3,8 +3,8 @@
 use crate::cli;
 use std::str;
 
-#[test]
-fn keys_import_priv_validator_test() {
+/// Arguments to import the given priv_validator key file as key 0x0001
+fn import_json_args(path: &str) -> Vec<&str> {
     #[allow(unused_mut)]
     let mut args = vec!["yubihsm", "keys", "import"];
 
@@ -12,7 +12,13 @@ fn keys_import_priv_validator_test() {
     args.extend_from_slice(&["-c", super::KMS_CONFIG_PATH]);
     args.extend_from_slice(&["-t", "json"]);
     args.extend_from_slice(&["-i", "1"]); // key ID
-    args.extend_from_slice(&[super::PRIV_VALIDATOR_CONFIG_PATH]);
+    args.push(path);
+    args
+}
+
+#[test]
+fn keys_import_priv_validator_test() {
+    let args = import_json_args(super::PRIV_VALIDATOR_CONFIG_PATH);
 
     let out = cli::run_successfully(args.as_slice());
 
@@ -27,14 +33,7 @@ fn keys_import_priv_validator_test() {
 /// a panic
 #[test]
 fn keys_import_rejects_a_secp256k1_priv_validator() {
-    #[allow(unused_mut)]
-    let mut args = vec!["yubihsm", "keys", "import"];
-
-    #[cfg(feature = "yubihsm-mock")]
-    args.extend_from_slice(&["-c", super::KMS_CONFIG_PATH]);
-    args.extend_from_slice(&["-t", "json"]);
-    args.extend_from_slice(&["-i", "1"]); // key ID
-    args.extend_from_slice(&[super::SECP256K1_PRIV_VALIDATOR_PATH]);
+    let args = import_json_args(super::SECP256K1_PRIV_VALIDATOR_PATH);
 
     let out = cli::run(args.as_slice());
     let message = str::from_utf8(&out.stderr).unwrap();
