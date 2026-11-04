@@ -165,8 +165,9 @@ mod tests {
     /// the run would be reported as a timeout instead of read
     #[test]
     fn a_hook_writing_more_than_a_pipe_holds_is_still_read() {
-        // 256 KiB of leading whitespace, past any platform's pipe buffer and
-        // short of the output limit, then the JSON a hook is expected to print
+        // 256 KiB of leading whitespace, four times the 64 KiB pipe buffer of macOS
+        // and of Linux on 4 KiB pages, yet short of the output limit, then the JSON
+        // a hook is expected to print
         let output = run(&shell_hook(
             "head -c 262144 /dev/zero | tr '\\0' ' '; echo '{\"latest_block_height\":\"5\"}'",
         ))
