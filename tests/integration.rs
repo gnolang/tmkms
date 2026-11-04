@@ -40,21 +40,11 @@ const SIGNING_SECP256K1_KEY_PATH: &str = "tests/support/signing_secp256k1.key";
 /// Path to the KMS's identity key for the secret connection
 const SECRET_CONNECTION_KEY_PATH: &str = "tests/support/secret_connection.key";
 
-/// Name of a captured KMS log inside the KMS's directory
+/// Name of the KMS's log inside the KMS's directory
 const KMS_LOG_FILE: &str = "kms.log";
 
 /// How long a KMS expected to exit may take before the test fails instead of hanging
 const KMS_EXIT_TIMEOUT: Duration = Duration::from_secs(10);
-
-/// Where a spawned KMS writes its log
-#[derive(Clone, Copy)]
-enum KmsLog {
-    /// The test's own output, where any line the KMS logs breaks pristine test output
-    Inherited,
-
-    /// A file the test reads back, for a test that makes the KMS fail on purpose
-    Captured,
-}
 
 enum KmsSocket {
     /// TCP socket type
@@ -101,13 +91,13 @@ struct KmsProcess {
     socket: KmsSocket,
 
     /// Directory holding this process's keys, double-sign protection state file and
-    /// captured log, kept alive (and cleaned up) for the lifetime of the process
+    /// log, kept alive (and cleaned up) for the lifetime of the process
     kms_dir: TempDir,
 }
 
 impl KmsProcess {
     /// Spawn the KMS process and wait for an incoming TCP connection
-    pub fn create_tcp(key_type: &KeyType, log: KmsLog) -> Self {
+    pub fn create_tcp(key_type: &KeyType) -> Self {
         // Generate a random port and a config file
         let port: u16 = rand::thread_rng().gen_range(60000..=65535);
         let kms_dir = tempfile::tempdir().unwrap();
@@ -116,7 +106,7 @@ impl KmsProcess {
         // Listen on a random port
         let listener = TcpListener::bind(format!("{}:{}", "127.0.0.1", port)).unwrap();
 
-        let process = KmsProcess::spawn(&config, log, &kms_dir);
+        let process = KmsProcess::spawn(&config, &kms_dir);
 
         let (socket, _) = listener.accept().unwrap();
         Self {
@@ -127,7 +117,7 @@ impl KmsProcess {
     }
 
     /// Spawn the KMS process and connect to the Unix listener
-    pub fn create_unix(key_type: &KeyType, log: KmsLog) -> Self {
+    pub fn create_unix(key_type: &KeyType) -> Self {
         // Create a random socket path and a config file
         let mut rng = rand::thread_rng();
         let letter: char = rng.gen_range(b'a'..=b'z') as char;
@@ -140,7 +130,7 @@ impl KmsProcess {
         let listener = UnixListener::bind(socket_path).unwrap();
 
         // Fire up the KMS process and allow it to connect to our Unix socket
-        let process = KmsProcess::spawn(&config, log, &kms_dir);
+        let process = KmsProcess::spawn(&config, &kms_dir);
 
         let (socket, _) = listener.accept().unwrap();
         Self {
@@ -150,38 +140,45 @@ impl KmsProcess {
         }
     }
 
-    /// Start a KMS on `config`, its log going where `log` says. It logs only warnings
-    /// and errors, so a healthy KMS logs nothing.
-    fn spawn(config: &NamedTempFile, log: KmsLog, kms_dir: &TempDir) -> Child {
-        let mut kms = Command::new(KMS_EXE_PATH);
-        kms.args(["start", "-c", config.path().to_str().unwrap()])
-            .env("RUST_LOG", "warn");
+    /// Start a KMS on `config`, logging to a file in `kms_dir` for the test to check.
+    /// It logs only warnings and errors, so a healthy KMS logs nothing.
+    fn spawn(config: &NamedTempFile, kms_dir: &TempDir) -> Child {
+        let log = File::create(kms_dir.path().join(KMS_LOG_FILE)).unwrap();
 
-        if let KmsLog::Captured = log {
-            let file = File::create(kms_dir.path().join(KMS_LOG_FILE)).unwrap();
-            kms.stdout(file.try_clone().unwrap()).stderr(file);
-        }
-
-        kms.spawn().unwrap()
+        Command::new(KMS_EXE_PATH)
+            .args(["start", "-c", config.path().to_str().unwrap()])
+            .env("RUST_LOG", "warn")
+            .stdout(log.try_clone().unwrap())
+            .stderr(log)
+            .spawn()
+            .unwrap()
     }
 
-    /// Wait for a KMS spawned with `KmsLog::Captured` to exit, and return how it exited
-    /// and what it logged
-    fn wait_for_exit(&mut self) -> (ExitStatus, String) {
+    /// Everything the KMS has logged so far
+    fn log(&self) -> String {
+        fs::read_to_string(self.kms_dir.path().join(KMS_LOG_FILE)).unwrap()
+    }
+
+    /// Wait for the KMS to exit on its own, and return how it exited
+    fn wait_for_exit(&mut self) -> ExitStatus {
         let deadline = Instant::now() + KMS_EXIT_TIMEOUT;
-        let status = loop {
+        loop {
             if let Some(status) = self.process.try_wait().unwrap() {
-                break status;
+                return status;
             }
             assert!(
                 Instant::now() < deadline,
                 "KMS still running after {KMS_EXIT_TIMEOUT:?}"
             );
             thread::sleep(Duration::from_millis(10));
-        };
-        let log = fs::read_to_string(self.kms_dir.path().join(KMS_LOG_FILE))
-            .expect("only a KMS spawned with KmsLog::Captured has a log");
-        (status, log)
+        }
+    }
+
+    /// Stop the KMS and return everything it logged
+    fn stop(&mut self) -> String {
+        self.process.kill().unwrap();
+        self.process.wait().unwrap();
+        self.log()
     }
 
     /// Create a config file for a TCP KMS and return its path
@@ -287,21 +284,33 @@ struct ProtocolTester {
 }
 
 impl ProtocolTester {
-    pub fn apply<F>(key_type: &KeyType, log: KmsLog, functor: F)
-    where
-        F: FnOnce(ProtocolTester),
-    {
-        let tcp_device = KmsProcess::create_tcp(key_type, log);
+    /// Start a TCP and a UNIX KMS and connect to both
+    pub fn start(key_type: &KeyType) -> Self {
+        let tcp_device = KmsProcess::create_tcp(key_type);
         let tcp_connection = tcp_device.create_connection();
-        let unix_device = KmsProcess::create_unix(key_type, log);
+        let unix_device = KmsProcess::create_unix(key_type);
         let unix_connection = unix_device.create_connection();
 
-        functor(Self {
+        Self {
             tcp_device,
             tcp_connection,
             unix_device,
             unix_connection,
-        });
+        }
+    }
+
+    /// Run `test` against a TCP and a UNIX KMS, then check that neither logged anything:
+    /// passing tests must print nothing, so a healthy KMS must log nothing
+    pub fn apply<F>(key_type: &KeyType, test: F)
+    where
+        F: FnOnce(&mut ProtocolTester),
+    {
+        let mut pt = Self::start(key_type);
+        test(&mut pt);
+
+        for kms in [&mut pt.tcp_device, &mut pt.unix_device] {
+            assert_eq!(kms.stop(), "", "a healthy KMS logged something");
+        }
     }
 }
 
@@ -400,16 +409,6 @@ fn generated_configs_point_at_an_existing_state_file() {
     }
 }
 
-/// Passing tests must print nothing, so a healthy KMS under test must log nothing
-#[test]
-fn healthy_kms_logs_nothing() {
-    let mut kms = KmsProcess::create_unix(&KeyType::Consensus, KmsLog::Captured);
-    kms.process.kill().unwrap();
-
-    let (_, log) = kms.wait_for_exit();
-    assert_eq!(log, "");
-}
-
 /// The KMS warns about any key file others can read, and git stores the committed
 /// fixtures as 0644, so every config the harness writes must point at owner-only
 /// copies instead
@@ -479,7 +478,7 @@ fn handle_and_sign_proposal(key_type: KeyType) {
         nanos: dt.timestamp_subsec_nanos() as i32,
     };
 
-    ProtocolTester::apply(&key_type, KmsLog::Inherited, |mut pt| {
+    ProtocolTester::apply(&key_type, |pt| {
         let proposal = proto::types::v1beta1::Proposal {
             r#type: ConsensusMsgType::Proposal.into(),
             height: 12345,
@@ -499,10 +498,10 @@ fn handle_and_sign_proposal(key_type: KeyType) {
 
         send_request(
             proto::privval::message::Sum::SignProposalRequest(request),
-            &mut pt,
+            pt,
         );
 
-        let response = match read_response(&mut pt) {
+        let response = match read_response(pt) {
             proto::privval::message::Sum::SignedProposalResponse(resp) => resp,
             other => panic!("unexpected message type in response: {other:?}"),
         };
@@ -553,7 +552,7 @@ fn handle_and_sign_vote(key_type: KeyType) {
         nanos: dt.timestamp_subsec_nanos() as i32,
     };
 
-    ProtocolTester::apply(&key_type, KmsLog::Inherited, |mut pt| {
+    ProtocolTester::apply(&key_type, |pt| {
         let vote_msg = proto::types::v1beta1::Vote {
             r#type: 0x01,
             height: 12345,
@@ -584,9 +583,9 @@ fn handle_and_sign_vote(key_type: KeyType) {
             // skip_extension_signing: false,
         };
 
-        send_request(proto::privval::message::Sum::SignVoteRequest(vote), &mut pt);
+        send_request(proto::privval::message::Sum::SignVoteRequest(vote), pt);
 
-        let request = match read_response(&mut pt) {
+        let request = match read_response(pt) {
             proto::privval::message::Sum::SignedVoteResponse(resp) => resp,
             other => panic!("unexpected message type in response: {other:?}"),
         };
@@ -641,55 +640,57 @@ fn exceed_max_height(key_type: KeyType) {
         nanos: dt.timestamp_subsec_nanos() as i32,
     };
 
-    ProtocolTester::apply(&key_type, KmsLog::Captured, |mut pt| {
-        let vote_msg = proto::types::v1beta1::Vote {
-            r#type: 0x01,
-            height: 500001,
-            round: 2,
-            timestamp: Some(t),
-            block_id: Some(proto::types::v1beta1::BlockId {
-                hash: b"some hash00000000000000000000000".to_vec(),
-                part_set_header: Some(proto::types::v1beta1::PartSetHeader {
-                    total: 1000000,
-                    hash: b"parts_hash0000000000000000000000".to_vec(),
-                }),
+    // Not `apply`: each KMS logs the error it is made to hit
+    let mut pt = ProtocolTester::start(&key_type);
+
+    let vote_msg = proto::types::v1beta1::Vote {
+        r#type: 0x01,
+        height: 500001,
+        round: 2,
+        timestamp: Some(t),
+        block_id: Some(proto::types::v1beta1::BlockId {
+            hash: b"some hash00000000000000000000000".to_vec(),
+            part_set_header: Some(proto::types::v1beta1::PartSetHeader {
+                total: 1000000,
+                hash: b"parts_hash0000000000000000000000".to_vec(),
             }),
-            validator_address: vec![
-                0xa3, 0xb2, 0xcc, 0xdd, 0x71, 0x86, 0xf1, 0x68, 0x5f, 0x21, 0xf2, 0x48, 0x2a, 0xf4,
-                0xfb, 0x34, 0x46, 0xa8, 0x4b, 0x35,
-            ],
-            validator_index: 56789,
-            signature: vec![],
-            // extension: vec![],
-            // extension_signature: vec![],
-        };
+        }),
+        validator_address: vec![
+            0xa3, 0xb2, 0xcc, 0xdd, 0x71, 0x86, 0xf1, 0x68, 0x5f, 0x21, 0xf2, 0x48, 0x2a, 0xf4,
+            0xfb, 0x34, 0x46, 0xa8, 0x4b, 0x35,
+        ],
+        validator_index: 56789,
+        signature: vec![],
+        // extension: vec![],
+        // extension_signature: vec![],
+    };
 
-        let vote = proto::privval::v1beta1::SignVoteRequest {
-            vote: Some(vote_msg),
-            chain_id: chain_id.into(),
-            // skip_extension_signing: false,
-        };
+    let vote = proto::privval::v1beta1::SignVoteRequest {
+        vote: Some(vote_msg),
+        chain_id: chain_id.into(),
+        // skip_extension_signing: false,
+    };
 
-        send_request(proto::privval::message::Sum::SignVoteRequest(vote), &mut pt);
+    send_request(proto::privval::message::Sum::SignVoteRequest(vote), &mut pt);
 
-        for (connection, kms) in [
-            (&mut pt.tcp_connection, &mut pt.tcp_device),
-            (&mut pt.unix_connection, &mut pt.unix_device),
-        ] {
-            let response = connection.read_msg();
-            assert!(response.is_err(), "KMS answered: {response:?}");
+    for (connection, kms) in [
+        (&mut pt.tcp_connection, &mut pt.tcp_device),
+        (&mut pt.unix_connection, &mut pt.unix_device),
+    ] {
+        let response = connection.read_msg();
+        assert!(response.is_err(), "KMS answered: {response:?}");
 
-            let (status, log) = kms.wait_for_exit();
-            assert_eq!(status.code(), Some(1), "{log}");
-            assert!(
-                log.contains(
-                    "requested signature above stop height: \
-                     attempted to sign at height 500001 which is greater than 500000"
-                ),
-                "{log}"
-            );
-        }
-    });
+        let status = kms.wait_for_exit();
+        let log = kms.log();
+        assert_eq!(status.code(), Some(1), "{log}");
+        assert!(
+            log.contains(
+                "requested signature above stop height: \
+                 attempted to sign at height 500001 which is greater than 500000"
+            ),
+            "{log}"
+        );
+    }
 }
 
 #[test]
@@ -705,17 +706,14 @@ fn test_handle_and_sign_get_publickey_consensus() {
 fn handle_and_sign_get_publickey(key_type: KeyType) {
     let chain_id = "test_chain_id";
 
-    ProtocolTester::apply(&key_type, KmsLog::Inherited, |mut pt| {
+    ProtocolTester::apply(&key_type, |pt| {
         let request = proto::privval::v1beta1::PubKeyRequest {
             chain_id: chain_id.into(),
         };
 
-        send_request(
-            proto::privval::message::Sum::PubKeyRequest(request),
-            &mut pt,
-        );
+        send_request(proto::privval::message::Sum::PubKeyRequest(request), pt);
 
-        let response = match read_response(&mut pt) {
+        let response = match read_response(pt) {
             proto::privval::message::Sum::PubKeyResponse(resp) => resp,
             other => panic!("unexpected message type in response: {other:?}"),
         };
@@ -739,10 +737,10 @@ fn handle_and_sign_get_publickey(key_type: KeyType) {
 fn test_handle_and_sign_ping_pong() {
     let key_type = KeyType::Consensus;
 
-    ProtocolTester::apply(&key_type, KmsLog::Inherited, |mut pt| {
+    ProtocolTester::apply(&key_type, |pt| {
         let request = proto::privval::v1beta1::PingRequest {};
-        send_request(proto::privval::message::Sum::PingRequest(request), &mut pt);
-        read_response(&mut pt);
+        send_request(proto::privval::message::Sum::PingRequest(request), pt);
+        read_response(pt);
     });
 }
 
