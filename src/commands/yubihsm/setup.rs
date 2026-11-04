@@ -242,14 +242,13 @@ pub fn read_mnemonic(input: &mut impl BufRead, prompt: &str) -> Result<mnemonic:
     print!("{prompt}");
     io::stdout().flush().unwrap();
 
-    let mut input_string = String::new();
+    let mut input_string = Zeroizing::new(String::new());
     input
         .read_line(&mut input_string)
         .expect("error reading mnemonic from STDIN!");
 
     let input_words: Vec<_> = input_string.split_whitespace().collect();
     let input_phrase = Zeroizing::new(input_words.join(" "));
-    input_string.zeroize();
 
     // `Phrase::new` keeps its own copy, which it wipes, but drops what it is handed
     // without wiping it, so it only borrows the phrase
@@ -267,9 +266,8 @@ fn print_mnemonic(mnemonic: &mnemonic::Phrase) {
     let words_len = words.len();
 
     for word_group in &[&words[..(words_len / 2)], &words[(words_len / 2)..]] {
-        let mut word_group_joined = word_group.join(" ");
-        println!("    {word_group_joined}");
-        word_group_joined.zeroize();
+        let word_group_joined = Zeroizing::new(word_group.join(" "));
+        println!("    {}", word_group_joined.as_str());
     }
 }
 
@@ -299,25 +297,24 @@ fn generate_mnemonic_from_hsm_and_os_csprngs(
     let hsm_client = get_hsm_client(hsm_connector, credentials)?;
 
     // Obtain half of the IKM from the YubiHSM (256-bits)
-    let mut ikm = hsm_client.get_pseudo_random(KEY_SIZE).map_err(Stop::hsm)?;
+    let hsm_entropy = Zeroizing::new(hsm_client.get_pseudo_random(KEY_SIZE).map_err(Stop::hsm)?);
 
     // Obtain another half of the IKM from the host OS (256-bits)
     // for a total of 512-bits IKM. This ensures we still get 256-bits
-    // of good IKM even in the event one of the RNGs fails.
+    // of good IKM even in the event one of the RNGs fails. The capacity is
+    // reserved up front, since growing the buffer would free the old one unwiped.
+    let mut ikm = Zeroizing::new(Vec::with_capacity(2 * KEY_SIZE));
+    ikm.extend_from_slice(&hsm_entropy);
     ikm.extend_from_slice(&[0u8; KEY_SIZE]);
     getrandom(&mut ikm[KEY_SIZE..]).expect("RNG failure!");
 
     let kdf = Hkdf::<Sha512>::new(None, &ikm);
 
     // 32-bytes (256-bits) -> 24 BIP32 words
-    let mut okm = [0u8; KEY_SIZE];
-    kdf.expand(HKDF_MNEMONIC_INFO, &mut okm).unwrap();
-    ikm.zeroize();
+    let mut okm = Zeroizing::new([0u8; KEY_SIZE]);
+    kdf.expand(HKDF_MNEMONIC_INFO, okm.as_mut()).unwrap();
 
-    let result = mnemonic::Phrase::from_entropy(okm, BIP39_LANGUAGE);
-    okm.zeroize();
-
-    Ok(result)
+    Ok(mnemonic::Phrase::from_entropy(*okm, BIP39_LANGUAGE))
 }
 
 /// Derive the default roles form the given BIP39 `mnemonic::Phrase`
