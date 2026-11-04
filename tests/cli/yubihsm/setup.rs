@@ -67,6 +67,69 @@ fn setup_prints_the_keys_it_derives_from_a_restored_mnemonic() {
 }
 
 #[test]
+fn setup_prints_a_random_mnemonic_and_the_keys_it_derives() {
+    let (code, stdout, stderr) = setup(&["-p"], "");
+    assert_eq!((code, stderr.as_str()), (Some(0), ""), "{stdout}");
+
+    let lines: Vec<&str> = stdout.lines().collect();
+    let expected_shape = [
+        "Below is a randomly generated 24-word admin mnemonic and derived keys/passwords:",
+        "",
+        "- key 0x0001: admin:",
+        "",
+        "    ",
+        "    ",
+        "",
+        "- authkey 0x0002 [operator]:  kms-operator-password-1",
+        "- authkey 0x0003 [auditor]:   kms-auditor-password-1",
+        "- authkey 0x0004 [validator]: kms-validator-password-1",
+        "- wrapkey 0x0001 [primary]:   ",
+    ];
+    assert_eq!(lines.len(), expected_shape.len(), "{stdout}");
+    for (line, start) in lines.iter().zip(expected_shape) {
+        assert!(line.starts_with(start), "{line:?} in {stdout}");
+    }
+
+    let words = format!("{} {}", lines[4].trim(), lines[5].trim());
+    assert_eq!(words.split(' ').count(), 24, "{stdout}");
+    hkd32::mnemonic::Phrase::new(&words, Default::default()).unwrap();
+
+    let wrap_key = lines[10].trim_start_matches(expected_shape[10]);
+    assert!(
+        wrap_key.len() == 64 && wrap_key.bytes().all(|b| b.is_ascii_hexdigit()),
+        "{stdout}"
+    );
+}
+
+#[test]
+fn setup_reports_an_hsm_failure() {
+    let dir = tempfile::tempdir().unwrap();
+    let config = dir.path().join("tmkms.toml");
+    let mock_config = fs::read_to_string(super::KMS_CONFIG_PATH).unwrap();
+    let password = r#"password = "password""#;
+    assert!(mock_config.contains(password));
+    fs::write(
+        &config,
+        mock_config.replace(password, r#"password = "wrong""#),
+    )
+    .unwrap();
+
+    let out = cli::run(["yubihsm", "setup", "-c", config.to_str().unwrap()]);
+    let stderr = cli::without_colour_codes(str::from_utf8(&out.stderr).unwrap());
+
+    assert_eq!(
+        (out.status.code(), str::from_utf8(&out.stdout).unwrap()),
+        (Some(1), "")
+    );
+    assert!(
+        stderr.starts_with("error: HSM error: authentication failed: ")
+            && stderr
+                .ends_with("invalid credentials for authentication key #1 (cryptogram mismatch)\n"),
+        "{stderr}"
+    );
+}
+
+#[test]
 fn setup_refuses_a_mnemonic_it_cannot_decode() {
     assert_eq!(
         setup(&["-r"], "not a mnemonic\n"),
